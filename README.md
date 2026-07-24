@@ -16,13 +16,11 @@ Use this repository as a template for any new `spora-plugin`:
 
 ## Authoring guidelines
 
-> ⚠️ **Driver layer is framework-internal.** Plugins should not depend
-> on the internal shape of `Spora\Drivers\ValueObjects\LLMResponse`,
-> `Spora\Drivers\ValueObjects\ContentBlock`, `Spora\Drivers\ValueObjects\Usage`,
-> or `Spora\Agents\ValueObjects\HistoryMessageContext`. Route through
-> orchestrator services (`AgentOrchestrator`, `TaskService`) instead.
-> The driver VO and history context may change between minor releases
-> without deprecation.
+Framework-level conventions — which classes are plugin-stable, what's
+framework-internal, schema versioning, deprecation policy — live in the
+[Spora docs → Plugin system](https://docs.spora-ai.com/reference/concepts/plugins-system).
+The driver / history value-object layer is **framework-internal**:
+route plugin logic through `AgentOrchestrator` and `TaskService`.
 
 ## Layout
 
