@@ -14,6 +14,14 @@ Use this repository as a template for any new `spora-plugin`:
 6. If your plugin needs database tables, add Laravel migrations under
    `database/migrations/` and bump `SkeletonPlugin::schemaVersion()`.
 
+## Authoring guidelines
+
+Framework-level conventions — which classes are plugin-stable, what's
+framework-internal, schema versioning, deprecation policy — live in the
+[Spora docs → Plugin system](https://docs.spora-ai.com/reference/concepts/plugins-system).
+The driver / history value-object layer is **framework-internal**:
+route plugin logic through `AgentOrchestrator` and `TaskService`.
+
 ## Layout
 
 ```
