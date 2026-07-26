@@ -10,7 +10,7 @@ Use this repository as a template for any new `spora-plugin`:
    in every PHP file.
 4. Update `plugin.json`'s `slug`, `description`, `class`, and `icon`.
 5. Replace `src/Tools/EchoTool.php` with your real tool(s); add more files
-   under `src/Tools/` and list them in `src/Plugin.php::tools()`.
+   under `src/Tools/` and list them in `src/SkeletonPlugin.php::tools()`.
 6. If your plugin needs database tables, add Laravel migrations under
    `database/migrations/` and bump `SkeletonPlugin::schemaVersion()`.
 
@@ -22,6 +22,14 @@ framework-internal, schema versioning, deprecation policy — live in the
 The driver / history value-object layer is **framework-internal**:
 route plugin logic through `AgentOrchestrator` and `TaskService`.
 
+> **Skills feature note.** The skeleton's `skillPaths()` override
+> requires `spora-core ≥ 0.12.0` at runtime (the `skillPaths()` hook
+> was added in v0.12). Older spora-core versions will throw a fatal
+> when the loader fails to resolve the missing method. The skeleton's
+> `composer.json` still requires `>=0.3.0 <1.0.0` for compatibility
+> with existing installations; plugin authors using the Skills
+> feature should pin to `^0.12`.
+
 ## Layout
 
 ```
@@ -29,7 +37,7 @@ route plugin logic through `AgentOrchestrator` and `TaskService`.
 ├── composer.json          # name=spora-ai/spora-plugin-<x>, type=spora-plugin
 ├── plugin.json            # manifest the PluginLoader reads at boot
 ├── src/
-│   ├── Plugin.php         # PluginInterface implementation
+│   ├── SkeletonPlugin.php # PluginInterface implementation (FQCN matches plugin.json `class`)
 │   └── Tools/
 │       └── EchoTool.php   # one tool per file (replace this one)
 ├── tests/                 # Pest unit tests

@@ -10,11 +10,12 @@ use Spora\Plugins\Skeleton\Tools\EchoTool;
 /**
  * Plugin entry point — extending {@see AbstractPlugin} (rather than directly
  * implementing {@see \Spora\Plugins\PluginInterface}) means we only have to
- * override the two hooks we actually use: getName() and tools().
+ * override the hooks we actually use. This skeleton ships tools, skills,
+ * and agent templates as the worked example.
  *
  * The base class provides no-op defaults for autoload(), drivers(),
- * recipePaths(), skillPaths(), agentTemplatePaths(), schemaVersion(),
- * migrationsPath(), and register().
+ * recipePaths(), schemaVersion(), migrationsPath(), apps(), routes(),
+ * boot(), and register().
  */
 final class SkeletonPlugin extends AbstractPlugin
 {
