@@ -31,37 +31,29 @@ final class SkeletonPlugin extends AbstractPlugin
         ];
     }
 
-    // --- Optional hooks: delete any of the three methods below if your
-    //     plugin ships no skills / templates / recipes. Use
-    //     `$this->pluginDir()` (provided by AbstractPlugin) to resolve
-    //     paths under the plugin root — no ReflectionClass needed.
-
     /**
-     * Absolute path to the directory holding this plugin's skills.
-     * SkillScanner walks it depth-1; immediate children must each
-     * contain a SKILL.md. Remove this method if your plugin ships
-     * no skills.
+     * Skills this plugin ships. SkillScanner walks depth-1; remove this
+     * method if your plugin ships none.
      *
      * @return string[]
      */
     public function skillPaths(): array
     {
         return [
-            $this->pluginDir() . '/skills',
+            __DIR__ . '/../skills',
         ];
     }
 
     /**
-     * Absolute paths to agent-template files (.json / .yaml / .yml) this
-     * plugin ships. Scanner reads depth-0 from each path. Remove this
-     * method if your plugin ships no agent templates.
+     * Agent-template files this plugin ships. Remove if your plugin
+     * ships none.
      *
      * @return string[]
      */
     public function agentTemplatePaths(): array
     {
         return [
-            $this->pluginDir() . '/agent-templates',
+            __DIR__ . '/../agent-templates',
         ];
     }
 }
