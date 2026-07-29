@@ -5,7 +5,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.4.1",
-        "spora-ai/spora-core": ">=0.3.0 <1.0.0"
+        "spora-ai/spora-core": "^0.12.0"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.94",
