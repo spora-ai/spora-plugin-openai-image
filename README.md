@@ -40,12 +40,20 @@ route plugin logic through `AgentOrchestrator` and `TaskService`.
 │   ├── SkeletonPlugin.php # PluginInterface implementation (FQCN matches plugin.json `class`)
 │   └── Tools/
 │       └── EchoTool.php   # one tool per file (replace this one)
+├── skills/                # skills shipped with the plugin (one folder per skill)
+├── agent-templates/       # agent-template files shipped with the plugin
 ├── tests/                 # Pest unit tests
 │   ├── Pest.php
 │   └── Unit/
 └── .github/workflows/
     └── ci.yml             # pest + phpstan + cs-fixer
 ```
+
+`skills/` and `agent-templates/` are present in the template (with
+`.gitkeep`) so the directory references in `SkeletonPlugin::skillPaths()`
+and `SkeletonPlugin::agentTemplatePaths()` resolve out of the box.
+Plugin authors can leave them empty if the plugin ships none, or delete
+the methods in `SkeletonPlugin.php` to drop the hook entirely.
 
 ## Local development
 
