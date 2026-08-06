@@ -1,6 +1,6 @@
 {
-    "name": "spora-ai/spora-plugin-skeleton",
-    "description": "Skeleton for Spora plugins — copy this repo to start a new one.",
+    "name": "spora-ai/spora-plugin-openai-image",
+    "description": "OpenAI-compatible image generation for Spora agents.",
     "type": "spora-plugin",
     "license": "MIT",
     "require": {
@@ -16,16 +16,17 @@
     },
     "autoload": {
         "psr-4": {
-            "Spora\\Plugins\\Skeleton\\": "src/"
+            "Spora\\Plugins\\OpenAIImage\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "Spora\\Plugins\\Skeleton\\Tests\\": "tests/"
+            "Spora\\Plugins\\OpenAIImage\\Tests\\": "tests/"
         }
     },
     "scripts": {
         "test": "pest",
+        "test:parallel": "pest --parallel --processes=auto --max-batch-size=50",
         "analyse": "phpstan analyse --no-progress",
         "lint": "php-cs-fixer fix --dry-run --diff --no-interaction"
     },
