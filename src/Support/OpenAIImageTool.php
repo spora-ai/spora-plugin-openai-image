@@ -65,7 +65,10 @@ abstract class OpenAIImageTool extends AbstractTool
 
         $client = new OpenAIImageHttpClient($this->httpClient, $apiKey, $baseUrl, $timeout);
         try {
-            return $work($client, $settings, $model);
+            // Pass only the two arguments the closures actually use. Passing
+            // $settings too would bind the array to the closure's `string $model`
+            // parameter (positional), tripping a TypeError on every call.
+            return $work($client, $model);
         } catch (Throwable $e) {
             $this->logger?->error('OpenAI-compatible image generation failed', ['exception' => $e]);
             return new ToolResult(false, 'Image generation failed: ' . $e->getMessage());
