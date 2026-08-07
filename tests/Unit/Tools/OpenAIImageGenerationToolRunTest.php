@@ -91,3 +91,53 @@ it('refuses to run when the api_key is missing', function () {
     expect($result->success)->toBeFalse();
     expect($result->content)->toContain('API key');
 });
+
+it('summarises a long prompt in the markdown image tag (no full prompt in the alt text)', function () {
+    $tool = toolWith([
+        'api_key' => 'sk-test',
+        'base_url' => 'https://api.openai.com/v1',
+        'http_timeout_seconds' => 600,
+        'model' => 'gpt-image-2',
+    ]);
+
+    // 3500-char prompt — the same shape as the production infographic prompt that
+    // bloated the rendering pipeline. The tool's `trim()` strips the trailing
+    // space, so the assertion compares against the trimmed shape.
+    $longPrompt = rtrim(str_repeat('A sprawling editorial infographic with cards, headers, and footers. ', 70));
+
+    $result = $tool->execute([
+        'action' => 'generate',
+        'prompt' => $longPrompt,
+    ], agentId: 1, userId: 1);
+
+    expect($result->success)->toBeTrue();
+    // The block must NOT contain the full prompt verbatim — the alt text bloats
+    // markdown rendering and breaks strict parsers.
+    expect($result->content)->not->toContain($longPrompt);
+    // The full prompt stays on the data channel for callers that need it.
+    expect($result->data['prompt'] ?? null)->toBe($longPrompt);
+    // The alt text is short (just "Generated image N").
+    $imageTag = explode("\n\n", $result->content)[1] ?? '';
+    preg_match('/!\[([^\]]*)\]\(([^)]+)\)/', $imageTag, $m);
+    expect(strlen($m[1] ?? ''))->toBeLessThanOrEqual(20);
+});
+
+it('does not break the markdown image tag when the prompt contains newlines and brackets', function () {
+    $tool = toolWith([
+        'api_key' => 'sk-test',
+        'base_url' => 'https://api.openai.com/v1',
+        'http_timeout_seconds' => 600,
+        'model' => 'gpt-image-2',
+    ]);
+
+    $prompt = "Editorial infographic\nwith a [bracket] and a | pipe.";
+
+    $result = $tool->execute([
+        'action' => 'generate',
+        'prompt' => $prompt,
+    ], agentId: 1, userId: 1);
+
+    expect($result->success)->toBeTrue();
+    $imageTag = explode("\n\n", $result->content)[1] ?? '';
+    expect($imageTag)->toMatch('/^!\[Generated image 1\]\([^)]+\)$/');
+});

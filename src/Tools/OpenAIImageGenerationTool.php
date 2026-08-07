@@ -215,14 +215,40 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
         }
 
         $count = count($urls);
+        $summary = $this->summarizePrompt($prompt);
         $heading = $count === 1
-            ? "Generated image for prompt: \"{$prompt}\""
-            : "Generated {$count} images for prompt: \"{$prompt}\"";
+            ? "Generated image — {$summary}"
+            : "Generated {$count} images — {$summary}";
         $content = $heading . "\n\n";
-        $content .= implode("\n\n", array_map(static fn(int $i, string $url): string => MediaEmbed::image($url, 'Generated image ' . ($i + 1) . ': ' . $prompt), array_keys($urls), $urls));
+        $content .= implode("\n\n", array_map(
+            static fn(int $i, string $url): string => MediaEmbed::image($url, 'Generated image ' . ($i + 1)),
+            array_keys($urls),
+            $urls,
+        ));
         $content .= "\n\nEcho the markdown image block above verbatim so the chat UI renders the image inline. For raw URLs, read ToolResult.data.image_urls.";
 
-        return new ToolResult(true, $content, ['image_urls' => $urls, 'model' => $model]);
+        // Stash the full prompt on the data channel so the LLM can reference it
+        // (e.g. when writing follow-up variation calls) without re-asking the user.
+        return new ToolResult(true, $content, ['image_urls' => $urls, 'model' => $model, 'prompt' => $prompt]);
+    }
+
+    /**
+     * First 80 chars of the prompt, with newlines and surrounding quotes collapsed.
+     * The markdown image tag's alt text and the heading have strict size limits
+     * (markdown alt-text bloat breaks some renderers; long headings eat the chat
+     * context). The full prompt stays available on `ToolResult.data.prompt` for
+     * callers that need it.
+     */
+    private function summarizePrompt(string $prompt): string
+    {
+        $collapsed = preg_replace('/\s+/', ' ', trim($prompt)) ?? trim($prompt);
+        if ($collapsed === '') {
+            return '(empty prompt)';
+        }
+        if (mb_strlen($collapsed) <= 80) {
+            return $collapsed;
+        }
+        return mb_substr($collapsed, 0, 80) . '…';
     }
 
     private function archive(string $base64, string $prompt, ?string $filename, int $agentId, ?int $userId, int $index): string
