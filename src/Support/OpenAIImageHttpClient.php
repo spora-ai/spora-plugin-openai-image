@@ -129,7 +129,11 @@ final class OpenAIImageHttpClient
      * Resolve an `input_image` reference to raw bytes. Accepts:
      *   - http(s)://... — fetches the URL via the injected HttpClient.
      *   - data:image/...;base64,... — decodes the base64 payload.
-     *   - a Media Archive asset URL (`/api/v1/assets/<token>.<ext>`) — fetches it.
+     *
+     * Media Archive references (UUIDs and `/api/v1/assets/<token>.<ext>` URLs)
+     * are resolved to one of the above shapes upstream by
+     * {@see OpenAIImageMediaArchiveResolver}
+     * before this method is called.
      */
     private function fetchImage(string $inputImage): string
     {

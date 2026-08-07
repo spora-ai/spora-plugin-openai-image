@@ -9,6 +9,11 @@ use Spora\Services\ToolConfigService;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\Contracts\HttpClient\ResponseInterface;
 
+const RUN_TEST_BASE_URL  = 'https://api.openai.com/v1';
+const RUN_TEST_PROMPT    = 'A lighthouse';
+const RUN_TEST_MODEL     = 'gpt-image-2';
+const RUN_TEST_TIMEOUT   = 600;
+
 /**
  * Regression tests for OpenAIImageTool::run(). The runtime contract is:
  *   $work($client, $model)
@@ -18,10 +23,8 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
  *   closures only declare two parameters), turning the array
  *   $settings into a TypeError on every call.
  */
-function toolWith(
-    array $settings,
-    string $model = 'gpt-image-2',
-): OpenAIImageGenerationTool {
+function toolWith(array $settings): OpenAIImageGenerationTool
+{
     $config = M::mock(ToolConfigService::class);
     $config->shouldReceive('getEffectiveSettings')->andReturn($settings);
 
@@ -38,38 +41,37 @@ function toolWith(
 
     // MediaArchiveService is `final` and can't be mocked. Pass null and the
     // tool falls back to data URL ingestion, which is fine for these tests.
-    $tool = new OpenAIImageGenerationTool($config, $http, $logger, null);
-    return $tool;
+    return new OpenAIImageGenerationTool($config, $http, $logger, null);
 }
 
 it('does not typeerror when model is configured as a string (regression for the $settings/$model positional bug)', function () {
     $tool = toolWith([
         'api_key' => 'sk-test',
-        'base_url' => 'https://api.openai.com/v1',
-        'http_timeout_seconds' => 600,
-        'model' => 'gpt-image-2',
+        'base_url' => RUN_TEST_BASE_URL,
+        'http_timeout_seconds' => RUN_TEST_TIMEOUT,
+        'model' => RUN_TEST_MODEL,
     ]);
 
     $result = $tool->execute([
         'action' => 'generate',
-        'prompt' => 'A lighthouse',
+        'prompt' => RUN_TEST_PROMPT,
     ], agentId: 1, userId: 1);
 
     expect($result->success)->toBeTrue();
-    expect($result->content)->toContain('A lighthouse');
+    expect($result->content)->toContain(RUN_TEST_PROMPT);
 });
 
 it('falls back to the default model when the configured value is empty', function () {
     $tool = toolWith([
         'api_key' => 'sk-test',
-        'base_url' => 'https://api.openai.com/v1',
-        'http_timeout_seconds' => 600,
+        'base_url' => RUN_TEST_BASE_URL,
+        'http_timeout_seconds' => RUN_TEST_TIMEOUT,
         'model' => '',
     ]);
 
     $result = $tool->execute([
         'action' => 'generate',
-        'prompt' => 'A lighthouse',
+        'prompt' => RUN_TEST_PROMPT,
     ], agentId: 1, userId: 1);
 
     expect($result->success)->toBeTrue();
@@ -78,14 +80,14 @@ it('falls back to the default model when the configured value is empty', functio
 it('refuses to run when the api_key is missing', function () {
     $tool = toolWith([
         'api_key' => '',
-        'base_url' => 'https://api.openai.com/v1',
-        'http_timeout_seconds' => 600,
-        'model' => 'gpt-image-2',
+        'base_url' => RUN_TEST_BASE_URL,
+        'http_timeout_seconds' => RUN_TEST_TIMEOUT,
+        'model' => RUN_TEST_MODEL,
     ]);
 
     $result = $tool->execute([
         'action' => 'generate',
-        'prompt' => 'A lighthouse',
+        'prompt' => RUN_TEST_PROMPT,
     ], agentId: 1, userId: 1);
 
     expect($result->success)->toBeFalse();
@@ -95,9 +97,9 @@ it('refuses to run when the api_key is missing', function () {
 it('summarises a long prompt in the markdown image tag (no full prompt in the alt text)', function () {
     $tool = toolWith([
         'api_key' => 'sk-test',
-        'base_url' => 'https://api.openai.com/v1',
-        'http_timeout_seconds' => 600,
-        'model' => 'gpt-image-2',
+        'base_url' => RUN_TEST_BASE_URL,
+        'http_timeout_seconds' => RUN_TEST_TIMEOUT,
+        'model' => RUN_TEST_MODEL,
     ]);
 
     // 3500-char prompt — the same shape as the production infographic prompt that
@@ -125,9 +127,9 @@ it('summarises a long prompt in the markdown image tag (no full prompt in the al
 it('does not break the markdown image tag when the prompt contains newlines and brackets', function () {
     $tool = toolWith([
         'api_key' => 'sk-test',
-        'base_url' => 'https://api.openai.com/v1',
-        'http_timeout_seconds' => 600,
-        'model' => 'gpt-image-2',
+        'base_url' => RUN_TEST_BASE_URL,
+        'http_timeout_seconds' => RUN_TEST_TIMEOUT,
+        'model' => RUN_TEST_MODEL,
     ]);
 
     $prompt = "Editorial infographic\nwith a [bracket] and a | pipe.";

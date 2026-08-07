@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Spora\Plugins\OpenAIImage\Tools;
 
-use RuntimeException;
 use Spora\Plugins\OpenAIImage\Support\OpenAIImageHttpClient;
 use Spora\Plugins\OpenAIImage\Support\OpenAIImageMediaArchiveResolver;
+use Spora\Plugins\OpenAIImage\Support\OpenAIImagePayloadException;
 use Spora\Plugins\OpenAIImage\Support\OpenAIImageTool;
 use Spora\Services\MediaArchive\MediaArchiveService;
 use Spora\Services\MediaArchive\MediaIngestRequest;
@@ -255,7 +255,7 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
     {
         $bytes = base64_decode($base64, true);
         if ($bytes === false) {
-            throw new RuntimeException('Image API returned invalid base64 image data.');
+            throw new OpenAIImagePayloadException('Image API returned invalid base64 image data.');
         }
         $archive = $this->mediaArchive();
         if (!$archive instanceof MediaArchiveService) {
