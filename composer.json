@@ -5,7 +5,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.4.1",
-        "spora-ai/spora-core": ">=0.12.0 <2.0.0"
+        "spora-ai/spora-core": ">=0.15.0 <2.0.0 || @dev"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.94",
@@ -27,7 +27,7 @@
     "scripts": {
         "test": "pest",
         "test:parallel": "pest --parallel --processes=auto --max-batch-size=50",
-        "analyse": "phpstan analyse --no-progress",
+        "analyse": "phpstan analyse --no-progress --memory-limit=2G",
         "lint": "php-cs-fixer fix --dry-run --diff --no-interaction"
     },
     "config": {
