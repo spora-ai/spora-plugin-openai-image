@@ -7,13 +7,17 @@ namespace Spora\Plugins\OpenAIImage\Support;
 use RuntimeException;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
-use Throwable;
 
+/**
+ * Thin, authenticated wrapper over Symfony's HttpClient for the OpenAI-compatible
+ * `/images/generations` endpoint.
+ *
+ * Single-shot: every failure surfaces to the caller so the LLM can adapt on retry
+ * (lower quality, smaller size, raise `http_timeout_seconds`). An internal retry
+ * loop on timeouts would just re-hit the same per-request cap and waste quota.
+ */
 final class OpenAIImageHttpClient
 {
-    private const RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504];
-    private const MAX_ATTEMPTS = 3;
-
     public function __construct(
         private readonly HttpClientInterface $httpClient,
         private readonly string $apiKey,
@@ -25,40 +29,39 @@ final class OpenAIImageHttpClient
     public function generate(array $body): array
     {
         $url = rtrim($this->baseUrl, '/') . '/images/generations';
-        for ($attempt = 1; $attempt <= self::MAX_ATTEMPTS; $attempt++) {
-            try {
-                $response = $this->httpClient->request('POST', $url, [
-                    'headers' => [
-                        'Authorization' => 'Bearer ' . $this->apiKey,
-                        'Content-Type' => 'application/json',
-                    ],
-                    'json' => $body,
-                    'timeout' => $this->timeoutSeconds,
-                ]);
-                $status = $response->getStatusCode();
-                if ($attempt < self::MAX_ATTEMPTS && in_array($status, self::RETRYABLE_STATUS_CODES, true)) {
-                    usleep($attempt * 250000);
-                    continue;
-                }
-                $content = $response->getContent(false);
-                $decoded = json_decode($content, true);
-                if ($status >= 400) {
-                    throw new RuntimeException($this->errorMessage($decoded, $status));
-                }
-                if (!is_array($decoded)) {
-                    throw new RuntimeException('Image API returned a non-JSON response.');
-                }
-                return $decoded;
-            } catch (TransportExceptionInterface $e) {
-                if ($attempt === self::MAX_ATTEMPTS) {
-                    throw new RuntimeException('Image API request failed: ' . $e->getMessage(), 0, $e);
-                }
-                usleep($attempt * 250000);
-            } catch (Throwable $e) {
-                throw $e instanceof RuntimeException ? $e : new RuntimeException($e->getMessage(), 0, $e);
-            }
+
+        try {
+            $response = $this->httpClient->request('POST', $url, [
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $this->apiKey,
+                    'Content-Type' => 'application/json',
+                ],
+                'json' => $body,
+                'timeout' => $this->timeoutSeconds,
+            ]);
+        } catch (TransportExceptionInterface $e) {
+            // Surface the timeout the operator can act on; the LLM chooses how to retry.
+            throw new RuntimeException(
+                'Image API request failed: ' . $e->getMessage()
+                . " — try a smaller size or lower quality, or ask the operator to raise http_timeout_seconds (current: {$this->timeoutSeconds}s).",
+                0,
+                $e,
+            );
         }
-        throw new RuntimeException('Image API request failed.');
+
+        $status = $response->getStatusCode();
+        $body = $response->getContent(false);
+        $decoded = json_decode($body, true);
+
+        if ($status >= 400) {
+            throw new RuntimeException($this->errorMessage($decoded, $status));
+        }
+
+        if (!is_array($decoded)) {
+            throw new RuntimeException('Image API returned a non-JSON response.');
+        }
+
+        return $decoded;
     }
 
     /** @param mixed $decoded */

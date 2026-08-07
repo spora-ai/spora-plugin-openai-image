@@ -18,7 +18,7 @@ abstract class OpenAIImageTool extends AbstractTool
     protected const QUALIFIED_NAME = 'openai-image:image_openai';
     protected const DEFAULT_MODEL = 'gpt-image-2';
     protected const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
-    protected const TIMEOUT_SECONDS = 120;
+    protected const TIMEOUT_SECONDS = 600;
 
     private ?LoggerInterface $logger;
 

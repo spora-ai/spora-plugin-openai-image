@@ -37,7 +37,7 @@ When the desired surface is ambiguous, ask whether the user wants square, landsc
 | `api_key` | required | API key for OpenAI or the compatible provider. |
 | `base_url` | `https://api.openai.com/v1` | API base URL; `/images/generations` is appended automatically. |
 | `model` | `gpt-image-2` | Image model identifier supported by the configured provider. |
-| `http_timeout_seconds` | `120` | Per-request timeout. |
+| `http_timeout_seconds` | `600` | Per-request timeout. Lower for single-image drafts; raise above 600 if `gpt-image-2` still hits the idle timeout. |
 
 ## Rendering
 
