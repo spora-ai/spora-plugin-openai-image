@@ -10,3 +10,6 @@ parameters:
         - vendor
     bootstrapFiles:
         - vendor/autoload.php
+
+    parallel:
+        maximumNumberOfProcesses: 1
