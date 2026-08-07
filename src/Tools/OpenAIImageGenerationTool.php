@@ -18,7 +18,7 @@ use Spora\Tools\ValueObjects\ToolResult;
 use Throwable;
 
 #[Tool(
-    name: 'image',
+    name: 'image_openai',
     description: 'Generate an image from a text prompt using an OpenAI-compatible image API.',
     displayName: 'OpenAI Image',
     category: 'generation',
@@ -27,8 +27,8 @@ use Throwable;
 #[ToolOperation(name: 'generate', description: 'Generate an image from a text prompt', enabledByDefault: true, requiresApprovalByDefault: false)]
 #[ToolSetting(key: 'api_key', label: 'API Key', type: 'password', description: 'API key for the configured image API.', required: true)]
 #[ToolSetting(key: 'base_url', label: 'API URL', type: 'text', description: 'OpenAI-compatible API base URL. The images endpoint is appended automatically.', default: 'https://api.openai.com/v1')]
-#[ToolSetting(key: 'model', label: 'Model', type: 'text', description: 'Image model identifier.', default: 'gpt-image-1')]
-#[ToolSetting(key: 'http_timeout_seconds', label: 'HTTP timeout (s)', type: 'number', description: 'Per-request timeout. Default 120 seconds.', default: '120')]
+#[ToolSetting(key: 'model', label: 'Model', type: 'text', description: 'Image model identifier.', default: 'gpt-image-2')]
+#[ToolSetting(key: 'http_timeout_seconds', label: 'HTTP timeout (s)', type: 'number', description: 'Per-request timeout. Default 600 seconds. Lower for single-image drafts where you want fast failure; raise above 600 if `gpt-image-2` calls still hit the idle timeout.', default: '600')]
 #[ToolParameter(name: 'prompt', type: 'string', description: 'The text prompt describing the image to generate.', required: true, maximum: 32000)]
 #[ToolParameter(name: 'size', type: 'string', description: 'Generated image dimensions.', required: false, enum: ['auto', '1024x1024', '1536x1024', '1024x1536'], default: 'auto')]
 #[ToolParameter(name: 'quality', type: 'string', description: 'Image quality.', required: false, enum: ['auto', 'low', 'medium', 'high'], default: 'auto')]

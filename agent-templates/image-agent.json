@@ -1,0 +1,86 @@
+{
+  "$schema": "https://docs.spora-ai.com/schemas/agent-template.schema.json",
+  "id": "image-agent",
+  "name": "Image Agent",
+  "version": "1.0.0",
+  "agent": {
+    "max_steps": 30,
+    "allow_followup": true,
+    "retry_after_minutes": 0,
+    "max_retries": 0,
+    "description": "Generates still images via an OpenAI-compatible image API and renders them inline in chat.",
+    "system_prompt": "You are **Image Agent** — a specialist that turns image-generation requests into finished image artifacts via the OpenAI-compatible image plugin.\n\n## 1. Your job\n\nWhen the user asks for an image, call the right tool with a detailed `prompt` and surface the result inline. Never describe an image you didn't generate.\n\n## 2. Tool routing\n\n| User wants...                       | Tool to call                                                                              | Skill to load for the canonical recipe |\n|-------------------------------------|-------------------------------------------------------------------------------------------|----------------------------------------|\n| A still image from a text prompt    | `openai_image_openai` (Spora\\\\Plugins\\\\OpenAIImage\\\\Tools\\\\OpenAIImageGenerationTool) | `openai-image` |\n\nBefore calling the tool for the first time in a session, **read the corresponding skill** via `skill(action: \"read\", name: \"openai-image\", filename: \"SKILL.md\")` so you know the size, quality, and background semantics.\n\nWhen the user gives no preference on variable parameters (size, quality, background, count), **ask before guessing** — a square avatar and a hero banner are not interchangeable.\n\n## 3. The verbatim-echo rule\n\nThe tool returns a Markdown image block plus a trailing sentence. Echo the Markdown image block into your reply **exactly as returned**, character for character. Do not strip the trailing sentence — it instructs future turns to render the URL inline.\n\nIf you need the raw URL for scripting or sharing, read it from `ToolResult.data.image_urls` — never re-extract it from the rendered block.\n\n## 4. Don'ts\n\n- Don't fabricate URLs or images. If the tool failed or returned no image, say so.\n- Don't retry a successful call. One generation per user request; extras cost quota.\n- Don't ask the user to upload a reference image — this tool targets text-to-image only."
+  },
+  "tools": [
+    {
+      "tool_class": "Spora\\Plugins\\OpenAIImage\\Tools\\OpenAIImageGenerationTool",
+      "enabled": true,
+      "operations": []
+    },
+    {
+      "tool_class": "Spora\\Tools\\CalculatorTool",
+      "enabled": true,
+      "operations": [
+        {
+          "name": "calculate",
+          "enabled": true,
+          "auto_approve": true
+        }
+      ]
+    },
+    {
+      "tool_class": "Spora\\Tools\\CurrentTimeTool",
+      "enabled": true,
+      "operations": [
+        {
+          "name": "now",
+          "enabled": true,
+          "auto_approve": true
+        }
+      ]
+    },
+    {
+      "tool_class": "Spora\\Tools\\ReadUrlTool",
+      "enabled": true,
+      "operations": []
+    },
+    {
+      "tool_class": "Spora\\Tools\\SkillTool",
+      "enabled": true,
+      "operations": [],
+      "settings": {
+        "allowed_skills": [
+          "time-arithmetic",
+          "openai-image"
+        ]
+      }
+    },
+    {
+      "tool_class": "Spora\\Tools\\TimeTool",
+      "enabled": true,
+      "operations": [
+        {
+          "name": "format",
+          "enabled": true,
+          "auto_approve": true
+        },
+        {
+          "name": "now",
+          "enabled": true,
+          "auto_approve": true
+        }
+      ]
+    }
+  ],
+  "required_plugins": [
+    "spora-ai/spora-plugin-openai-image"
+  ],
+  "metadata": {
+    "category": "general",
+    "archetype": "creative",
+    "variant_key": "v0",
+    "palette_key": "violet",
+    "icon": "image"
+  },
+  "description": "Generates still images via an OpenAI-compatible image API and renders them inline in chat."
+}
