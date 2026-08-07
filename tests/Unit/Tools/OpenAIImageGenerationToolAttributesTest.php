@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Spora\Plugins\OpenAIImage\Tests\Support\AttributeNotFoundException;
 use Spora\Plugins\OpenAIImage\Tools\OpenAIImageGenerationTool;
 use Spora\Tools\Attributes\ToolOperation;
 use Spora\Tools\Attributes\ToolParameter;
@@ -22,7 +23,7 @@ function imageToolParameterArgs(string $name): array
         }
     }
 
-    throw new RuntimeException("ToolParameter '{$name}' not declared on " . OpenAIImageGenerationTool::class);
+    throw new AttributeNotFoundException("ToolParameter '{$name}' not declared on " . OpenAIImageGenerationTool::class);
 }
 
 function imageToolOperationArgs(string $name): array
@@ -35,7 +36,7 @@ function imageToolOperationArgs(string $name): array
         }
     }
 
-    throw new RuntimeException("ToolOperation '{$name}' not declared on " . OpenAIImageGenerationTool::class);
+    throw new AttributeNotFoundException("ToolOperation '{$name}' not declared on " . OpenAIImageGenerationTool::class);
 }
 
 it('binds prompt to the generate operation (hidden on generate_variations-only agents)', function () {

@@ -8,6 +8,21 @@ use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\Contracts\HttpClient\ResponseInterface;
 
+const HTTP_CLIENT_TEST_BASE_URL  = 'https://provider.example/v1';
+const HTTP_CLIENT_TEST_API_KEY   = 'secret';
+const HTTP_CLIENT_TEST_PROMPT    = 'A lighthouse';
+const HTTP_CLIENT_TEST_MODEL     = 'gpt-image-1';
+const HTTP_CLIENT_TEST_TIMEOUT_S = 30;
+
+/**
+ * Build a client pointed at the test base URL/api key.
+ * Per-op signatures vary — pull the less-common fields out via the $args spread.
+ */
+function imageHttpClient(HttpClientInterface $http, int $timeout = HTTP_CLIENT_TEST_TIMEOUT_S): OpenAIImageHttpClient
+{
+    return new OpenAIImageHttpClient($http, HTTP_CLIENT_TEST_API_KEY, HTTP_CLIENT_TEST_BASE_URL, $timeout);
+}
+
 it('posts an OpenAI-compatible generation request with bearer authentication', function () {
     $response = M::mock(ResponseInterface::class);
     $response->shouldReceive('getStatusCode')->once()->andReturn(200);
@@ -18,15 +33,13 @@ it('posts an OpenAI-compatible generation request with bearer authentication', f
     $http = M::mock(HttpClientInterface::class);
     $http->shouldReceive('request')->once()->withArgs(function (string $method, string $url, array $options): bool {
         return $method === 'POST'
-            && $url === 'https://provider.example/v1/images/generations'
-            && $options['headers']['Authorization'] === 'Bearer secret'
-            && $options['json']['model'] === 'gpt-image-1'
-            && $options['json']['prompt'] === 'A lighthouse';
+            && $url === HTTP_CLIENT_TEST_BASE_URL . '/images/generations'
+            && $options['headers']['Authorization'] === 'Bearer ' . HTTP_CLIENT_TEST_API_KEY
+            && $options['json']['model'] === HTTP_CLIENT_TEST_MODEL
+            && $options['json']['prompt'] === HTTP_CLIENT_TEST_PROMPT;
     })->andReturn($response);
 
-    $client = new OpenAIImageHttpClient($http, 'secret', 'https://provider.example/v1', 30);
-
-    expect($client->generate(['model' => 'gpt-image-1', 'prompt' => 'A lighthouse']))
+    expect(imageHttpClient($http)->generate(['model' => HTTP_CLIENT_TEST_MODEL, 'prompt' => HTTP_CLIENT_TEST_PROMPT]))
         ->toHaveKey('data');
 });
 
@@ -40,8 +53,7 @@ it('includes the upstream error message for HTTP failures', function () {
     $http = M::mock(HttpClientInterface::class);
     $http->shouldReceive('request')->once()->andReturn($response);
 
-    expect(fn() => (new OpenAIImageHttpClient($http, 'secret', 'https://provider.example/v1', 30))
-        ->generate(['model' => 'bad']))
+    expect(fn() => imageHttpClient($http)->generate(['model' => 'bad']))
         ->toThrow(RuntimeException::class, 'invalid model');
 });
 
@@ -53,8 +65,7 @@ it('does not retry on a transport timeout and surfaces the actionable error', fu
 
     $caught = null;
     try {
-        (new OpenAIImageHttpClient($http, 'secret', 'https://api.openai.com/v1', 600))
-            ->generate(['model' => 'gpt-image-2', 'prompt' => 'x']);
+        imageHttpClient($http, 600)->generate(['model' => 'gpt-image-2', 'prompt' => 'x']);
     } catch (RuntimeException $e) {
         $caught = $e;
     }
@@ -79,14 +90,12 @@ it('routes generateVariations without input_image to the generations endpoint', 
     $http = M::mock(HttpClientInterface::class);
     $http->shouldReceive('request')->once()->withArgs(function (string $method, string $url, array $options): bool {
         return $method === 'POST'
-            && $url === 'https://provider.example/v1/images/generations'
+            && $url === HTTP_CLIENT_TEST_BASE_URL . '/images/generations'
             && $options['json']['n'] === 3
-            && $options['json']['prompt'] === 'A lighthouse';
+            && $options['json']['prompt'] === HTTP_CLIENT_TEST_PROMPT;
     })->andReturn($response);
 
-    $client = new OpenAIImageHttpClient($http, 'secret', 'https://provider.example/v1', 30);
-
-    $decoded = $client->generateVariations(['prompt' => 'A lighthouse', 'n' => 3]);
+    $decoded = imageHttpClient($http)->generateVariations(['prompt' => HTTP_CLIENT_TEST_PROMPT, 'n' => 3]);
     expect($decoded['data'])->toHaveCount(3);
 });
 
@@ -113,7 +122,7 @@ it('routes generateVariations with input_image to the multipart variations endpo
         ->once()
         ->withArgs(function (string $method, string $url, array $options): bool {
             return $method === 'POST'
-                && $url === 'https://provider.example/v1/images/variations'
+                && $url === HTTP_CLIENT_TEST_BASE_URL . '/images/variations'
                 && isset($options['multipart'])
                 && count($options['multipart']) === 3
                 && $options['multipart'][0]['name'] === 'image'
@@ -126,9 +135,7 @@ it('routes generateVariations with input_image to the multipart variations endpo
         })
         ->andReturn($uploadResponse);
 
-    $client = new OpenAIImageHttpClient($http, 'secret', 'https://provider.example/v1', 30);
-
-    $decoded = $client->generateVariations([
+    $decoded = imageHttpClient($http)->generateVariations([
         'input_image' => 'https://example.com/seed.png',
         'n' => 4,
         'size' => '1024x1024',
@@ -154,14 +161,13 @@ it('decodes data: URIs as input_image without making an HTTP request', function 
         ->once()
         ->withArgs(function (string $method, string $url, array $options): bool {
             return $method === 'POST'
-                && $url === 'https://provider.example/v1/images/variations'
+                && $url === HTTP_CLIENT_TEST_BASE_URL . '/images/variations'
                 && $options['multipart'][0]['contents'] === 'PNGBYTES';
         })
         ->andReturn($uploadResponse);
     $http->shouldNotReceive('request'); // no GET — the data: URI is local
 
-    $client = new OpenAIImageHttpClient($http, 'secret', 'https://provider.example/v1', 30);
-    $decoded = $client->generateVariations([
+    $decoded = imageHttpClient($http)->generateVariations([
         'input_image' => 'data:image/png;base64,' . base64_encode('PNGBYTES'),
         'n' => 2,
     ]);
@@ -172,8 +178,7 @@ it('rejects an unrecognised input_image scheme', function () {
     $http = M::mock(HttpClientInterface::class);
     $http->shouldNotReceive('request');
 
-    $client = new OpenAIImageHttpClient($http, 'secret', 'https://provider.example/v1', 30);
-    expect(fn() => $client->generateVariations([
+    expect(fn() => imageHttpClient($http)->generateVariations([
         'input_image' => '/local/path/to/file.png',
         'n' => 2,
     ]))->toThrow(RuntimeException::class, 'http(s) URL or a data: URI');

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Spora\Plugins\OpenAIImage\Support;
 
-use RuntimeException;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -35,39 +34,8 @@ final class OpenAIImageHttpClient
      */
     public function generate(array $body): array
     {
-        $url = rtrim($this->baseUrl, '/') . '/images/generations';
-
-        try {
-            $response = $this->httpClient->request('POST', $url, [
-                'headers' => [
-                    'Authorization' => 'Bearer ' . $this->apiKey,
-                    'Content-Type' => 'application/json',
-                ],
-                'json' => $body,
-                'timeout' => $this->timeoutSeconds,
-            ]);
-        } catch (TransportExceptionInterface $e) {
-            throw new RuntimeException(
-                'Image API request failed: ' . $e->getMessage()
-                . " — try a smaller size or lower quality, or ask the operator to raise http_timeout_seconds (current: {$this->timeoutSeconds}s).",
-                0,
-                $e,
-            );
-        }
-
-        $status = $response->getStatusCode();
-        $body = $response->getContent(false);
-        $decoded = json_decode($body, true);
-
-        if ($status >= 400) {
-            throw new RuntimeException($this->errorMessage($decoded, $status));
-        }
-
-        if (!is_array($decoded)) {
-            throw new RuntimeException('Image API returned a non-JSON response.');
-        }
-
-        return $decoded;
+        $response = $this->postJson('/images/generations', $body);
+        return $this->decodeResponse($response);
     }
 
     /**
@@ -84,10 +52,37 @@ final class OpenAIImageHttpClient
         unset($body['input_image']);
 
         if (is_string($inputImage) && $inputImage !== '') {
-            return $this->uploadVariations($body, $inputImage);
+            $response = $this->postMultipart('/images/variations', $body, $inputImage);
+            return $this->decodeResponse($response);
         }
 
         return $this->generate($body);
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     */
+    private function postJson(string $path, array $body): ResponseData
+    {
+        try {
+            $response = $this->httpClient->request('POST', rtrim($this->baseUrl, '/') . $path, [
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $this->apiKey,
+                    'Content-Type' => 'application/json',
+                ],
+                'json' => $body,
+                'timeout' => $this->timeoutSeconds,
+            ]);
+        } catch (TransportExceptionInterface $e) {
+            throw new OpenAIImageException(
+                'Image API request failed: ' . $e->getMessage()
+                . " — try a smaller size or lower quality, or ask the operator to raise http_timeout_seconds (current: {$this->timeoutSeconds}s).",
+                $this->timeoutSeconds,
+                $e,
+            );
+        }
+        $raw = $response->getContent(false);
+        return new ResponseData($response->getStatusCode(), $raw, json_decode($raw, true));
     }
 
     /**
@@ -97,9 +92,8 @@ final class OpenAIImageHttpClient
      *
      * @param array<string, mixed> $body
      */
-    private function uploadVariations(array $body, string $inputImage): array
+    private function postMultipart(string $path, array $body, string $inputImage): ResponseData
     {
-        $url = rtrim($this->baseUrl, '/') . '/images/variations';
         $multipart = [
             ['name' => 'image', 'contents' => $this->fetchImage($inputImage), 'filename' => 'input.png'],
         ];
@@ -111,7 +105,7 @@ final class OpenAIImageHttpClient
         }
 
         try {
-            $response = $this->httpClient->request('POST', $url, [
+            $response = $this->httpClient->request('POST', rtrim($this->baseUrl, '/') . $path, [
                 'headers' => [
                     'Authorization' => 'Bearer ' . $this->apiKey,
                 ],
@@ -119,27 +113,16 @@ final class OpenAIImageHttpClient
                 'timeout' => $this->timeoutSeconds,
             ]);
         } catch (TransportExceptionInterface $e) {
-            throw new RuntimeException(
+            throw new OpenAIImageException(
                 'Image API request failed: ' . $e->getMessage()
                 . " — try a smaller size, lower n, or ask the operator to raise http_timeout_seconds (current: {$this->timeoutSeconds}s).",
-                0,
+                $this->timeoutSeconds,
                 $e,
             );
         }
 
-        $status = $response->getStatusCode();
-        $body = $response->getContent(false);
-        $decoded = json_decode($body, true);
-
-        if ($status >= 400) {
-            throw new RuntimeException($this->errorMessage($decoded, $status));
-        }
-
-        if (!is_array($decoded)) {
-            throw new RuntimeException('Image API returned a non-JSON response.');
-        }
-
-        return $decoded;
+        $raw = $response->getContent(false);
+        return new ResponseData($response->getStatusCode(), $raw, json_decode($raw, true));
     }
 
     /**
@@ -151,37 +134,60 @@ final class OpenAIImageHttpClient
     private function fetchImage(string $inputImage): string
     {
         if (str_starts_with($inputImage, 'data:')) {
-            $comma = strpos($inputImage, ',');
-            if ($comma === false) {
-                throw new RuntimeException('input_image data URI is malformed.');
-            }
-            $payload = substr($inputImage, $comma + 1);
-            $bytes = base64_decode($payload, true);
-            if ($bytes === false) {
-                throw new RuntimeException('input_image data URI is not valid base64.');
-            }
-            return $bytes;
+            return $this->decodeDataUri($inputImage);
         }
 
         if (preg_match('#^https?://#i', $inputImage) === 1) {
-            try {
-                $response = $this->httpClient->request('GET', $inputImage, [
-                    'timeout' => $this->timeoutSeconds,
-                ]);
-            } catch (TransportExceptionInterface $e) {
-                throw new RuntimeException('Failed to fetch input_image: ' . $e->getMessage(), 0, $e);
-            }
-            $status = $response->getStatusCode();
-            $bytes = $response->getContent(false);
-            if ($status >= 400) {
-                throw new RuntimeException("Failed to fetch input_image: HTTP {$status}.");
-            }
-            return $bytes;
+            return $this->fetchHttpUrl($inputImage);
         }
 
-        throw new RuntimeException(
+        throw new OpenAIImageException(
             'input_image must be an http(s) URL or a data: URI; got an unrecognised value.',
+            $this->timeoutSeconds,
         );
+    }
+
+    private function decodeDataUri(string $inputImage): string
+    {
+        $comma = strpos($inputImage, ',');
+        if ($comma === false) {
+            throw new OpenAIImageException('input_image data URI is malformed.', $this->timeoutSeconds);
+        }
+        $bytes = base64_decode(substr($inputImage, $comma + 1), true);
+        if ($bytes === false) {
+            throw new OpenAIImageException('input_image data URI is not valid base64.', $this->timeoutSeconds);
+        }
+        return $bytes;
+    }
+
+    private function fetchHttpUrl(string $url): string
+    {
+        try {
+            $response = $this->httpClient->request('GET', $url, [
+                'timeout' => $this->timeoutSeconds,
+            ]);
+        } catch (TransportExceptionInterface $e) {
+            throw new OpenAIImageException('Failed to fetch input_image: ' . $e->getMessage(), $this->timeoutSeconds, $e);
+        }
+        $status = $response->getStatusCode();
+        $bytes = $response->getContent(false);
+        if ($status >= 400) {
+            throw new OpenAIImageException("Failed to fetch input_image: HTTP {$status}.", $this->timeoutSeconds);
+        }
+        return $bytes;
+    }
+
+    private function decodeResponse(ResponseData $response): array
+    {
+        if ($response->status >= 400) {
+            throw new OpenAIImageException($this->errorMessage($response->decoded, $response->status), $this->timeoutSeconds);
+        }
+
+        if (!is_array($response->decoded)) {
+            throw new OpenAIImageException('Image API returned a non-JSON response.', $this->timeoutSeconds);
+        }
+
+        return $response->decoded;
     }
 
     /** @param mixed $decoded */
@@ -192,4 +198,23 @@ final class OpenAIImageHttpClient
         }
         return 'Image API returned HTTP ' . $status . '.';
     }
+}
+
+/**
+ * Internal value object for the response triplet (status, raw body, decoded JSON).
+ * Keeps the postJson / postMultipart → decodeResponse handshake simple without
+ * leaking ResponseInterface into the decode path.
+ *
+ * @internal
+ */
+final class ResponseData
+{
+    /**
+     * @param array<string, mixed>|null $decoded
+     */
+    public function __construct(
+        public readonly int $status,
+        public readonly string $raw,
+        public readonly mixed $decoded,
+    ) {}
 }

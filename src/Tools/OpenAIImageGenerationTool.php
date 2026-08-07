@@ -89,6 +89,15 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
         if (!is_string($raw) || $raw === '') {
             return $arguments;
         }
+        return $this->resolveOrFail($arguments, $raw, $userId);
+    }
+
+    /**
+     * @param  array<string, mixed> $arguments
+     * @return array<string, mixed>|ToolResult
+     */
+    private function resolveOrFail(array $arguments, string $raw, ?int $userId): array|ToolResult
+    {
         $outcome = $this->mediaArchiveResolver->resolveInputImage($raw, $userId);
         if (isset($outcome['failed'])) {
             return $outcome['failed'];
@@ -116,13 +125,9 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
             return new ToolResult(false, 'Prompt cannot be empty.');
         }
 
-        return $this->run($arguments, $agentId, $userId, function (OpenAIImageHttpClient $client, array $settings, string $model) use ($arguments, $prompt, $agentId, $userId): ToolResult {
+        return $this->run($arguments, $agentId, $userId, function (OpenAIImageHttpClient $client, string $model) use ($arguments, $prompt, $agentId, $userId): ToolResult {
             $body = ['model' => $model, 'prompt' => $prompt];
-            foreach (['size', 'quality', 'background'] as $field) {
-                if (isset($arguments[$field]) && (string) $arguments[$field] !== 'auto') {
-                    $body[$field] = (string) $arguments[$field];
-                }
-            }
+            $this->appendOptionalFields($body, $arguments);
             $response = $client->generate($body);
             return $this->renderResponse($response, $prompt, $arguments, $agentId, $userId, $model, 1);
         });
@@ -142,13 +147,9 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
 
         $n = $this->clampN($arguments['n'] ?? self::DEFAULT_N);
 
-        return $this->run($arguments, $agentId, $userId, function (OpenAIImageHttpClient $client, array $settings, string $model) use ($arguments, $prompt, $inputImage, $n, $agentId, $userId): ToolResult {
+        return $this->run($arguments, $agentId, $userId, function (OpenAIImageHttpClient $client, string $model) use ($arguments, $prompt, $inputImage, $n, $agentId, $userId): ToolResult {
             $body = ['n' => $n];
-            foreach (['size', 'quality', 'background'] as $field) {
-                if (isset($arguments[$field]) && (string) $arguments[$field] !== 'auto') {
-                    $body[$field] = (string) $arguments[$field];
-                }
-            }
+            $this->appendOptionalFields($body, $arguments);
             if ($inputImage === '') {
                 // Prompt-based variations: stays on /v1/images/generations.
                 $body['model'] = $model;
@@ -163,19 +164,25 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
         });
     }
 
+    /**
+     * @param array<string, mixed> $body
+     * @param array<string, mixed> $arguments
+     */
+    private function appendOptionalFields(array &$body, array $arguments): void
+    {
+        foreach (['size', 'quality', 'background'] as $field) {
+            if (isset($arguments[$field]) && (string) $arguments[$field] !== 'auto') {
+                $body[$field] = (string) $arguments[$field];
+            }
+        }
+    }
+
     private function clampN(mixed $value): int
     {
         if (!is_numeric($value)) {
             return self::DEFAULT_N;
         }
-        $n = (int) $value;
-        if ($n < self::MIN_N) {
-            return self::MIN_N;
-        }
-        if ($n > self::MAX_N) {
-            return self::MAX_N;
-        }
-        return $n;
+        return max(self::MIN_N, min(self::MAX_N, (int) $value));
     }
 
     /**
