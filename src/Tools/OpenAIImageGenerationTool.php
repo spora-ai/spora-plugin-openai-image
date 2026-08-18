@@ -10,6 +10,7 @@ use Spora\Plugins\OpenAIImage\Support\OpenAIImagePayloadException;
 use Spora\Plugins\OpenAIImage\Support\OpenAIImageTool;
 use Spora\Services\MediaArchive\MediaArchiveService;
 use Spora\Services\MediaArchive\MediaIngestRequest;
+use Spora\Services\PrincipalContext;
 use Spora\Tools\Attributes\Tool;
 use Spora\Tools\Attributes\ToolOperation;
 use Spora\Tools\Attributes\ToolParameter;
@@ -55,8 +56,13 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
         $this->mediaArchiveResolver = $resolver;
     }
 
-    public function execute(array $arguments, int $agentId, ?int $userId = null, ?int $taskId = null): ToolResult
-    {
+    public function execute(
+        array $arguments,
+        int $agentId,
+        ?int $userId = null,
+        ?int $taskId = null,
+        ?PrincipalContext $context = null,
+    ): ToolResult {
         $arguments = $this->resolveInputImage($arguments, $userId);
         if ($arguments instanceof ToolResult) {
             return $arguments;
