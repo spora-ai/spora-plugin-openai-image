@@ -63,15 +63,18 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
         ?int $taskId = null,
         ?PrincipalContext $context = null,
     ): ToolResult {
-        $arguments = $this->resolveInputImage($arguments, $userId);
+        $ownerId  = $context->ownerUserId ?? $userId;
+        $runnerId = $context->runnerUserId ?? $userId;
+
+        $arguments = $this->resolveInputImage($arguments, $runnerId);
         if ($arguments instanceof ToolResult) {
             return $arguments;
         }
 
         $operation = (string) ($arguments['action'] ?? 'generate');
         return match ($operation) {
-            'generate_variations' => $this->generateVariations($arguments, $agentId, $userId),
-            default              => $this->generate($arguments, $agentId, $userId),
+            'generate_variations' => $this->generateVariations($arguments, $agentId, $ownerId, $runnerId),
+            default              => $this->generate($arguments, $agentId, $ownerId, $runnerId),
         };
     }
 
@@ -86,7 +89,7 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
      * @param  array<string, mixed> $arguments
      * @return array<string, mixed>|ToolResult
      */
-    private function resolveInputImage(array $arguments, ?int $userId): array|ToolResult
+    private function resolveInputImage(array $arguments, ?int $runnerId): array|ToolResult
     {
         if ($this->mediaArchiveResolver === null) {
             return $arguments;
@@ -95,16 +98,16 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
         if (!is_string($raw) || $raw === '') {
             return $arguments;
         }
-        return $this->resolveOrFail($arguments, $raw, $userId);
+        return $this->resolveOrFail($arguments, $raw, $runnerId);
     }
 
     /**
      * @param  array<string, mixed> $arguments
      * @return array<string, mixed>|ToolResult
      */
-    private function resolveOrFail(array $arguments, string $raw, ?int $userId): array|ToolResult
+    private function resolveOrFail(array $arguments, string $raw, ?int $runnerId): array|ToolResult
     {
-        $outcome = $this->mediaArchiveResolver->resolveInputImage($raw, $userId);
+        $outcome = $this->mediaArchiveResolver->resolveInputImage($raw, $runnerId);
         if (isset($outcome['failed'])) {
             return $outcome['failed'];
         }
@@ -124,23 +127,23 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
     }
 
     /** @param array<string, mixed> $arguments */
-    private function generate(array $arguments, int $agentId, ?int $userId): ToolResult
+    private function generate(array $arguments, int $agentId, ?int $ownerId, ?int $runnerId): ToolResult
     {
         $prompt = trim((string) ($arguments['prompt'] ?? ''));
         if ($prompt === '') {
             return new ToolResult(false, 'Prompt cannot be empty.');
         }
 
-        return $this->run($arguments, $agentId, $userId, function (OpenAIImageHttpClient $client, string $model) use ($arguments, $prompt, $agentId, $userId): ToolResult {
+        return $this->run($arguments, $agentId, $ownerId, function (OpenAIImageHttpClient $client, string $model) use ($arguments, $prompt, $agentId, $runnerId): ToolResult {
             $body = ['model' => $model, 'prompt' => $prompt];
             $this->appendOptionalFields($body, $arguments);
             $response = $client->generate($body);
-            return $this->renderResponse($response, $prompt, $arguments, $agentId, $userId, $model, 1);
+            return $this->renderResponse($response, $prompt, $arguments, $agentId, $runnerId, $model, 1);
         });
     }
 
     /** @param array<string, mixed> $arguments */
-    private function generateVariations(array $arguments, int $agentId, ?int $userId): ToolResult
+    private function generateVariations(array $arguments, int $agentId, ?int $ownerId, ?int $runnerId): ToolResult
     {
         $prompt = trim((string) ($arguments['prompt'] ?? ''));
         $inputImage = isset($arguments['input_image']) && is_string($arguments['input_image'])
@@ -153,7 +156,7 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
 
         $n = $this->clampN($arguments['n'] ?? self::DEFAULT_N);
 
-        return $this->run($arguments, $agentId, $userId, function (OpenAIImageHttpClient $client, string $model) use ($arguments, $prompt, $inputImage, $n, $agentId, $userId): ToolResult {
+        return $this->run($arguments, $agentId, $ownerId, function (OpenAIImageHttpClient $client, string $model) use ($arguments, $prompt, $inputImage, $n, $agentId, $runnerId): ToolResult {
             $body = ['n' => $n];
             $this->appendOptionalFields($body, $arguments);
             if ($inputImage === '') {
@@ -166,7 +169,7 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
             }
 
             $response = $client->generateVariations($body);
-            return $this->renderResponse($response, $prompt !== '' ? $prompt : 'variations of input image', $arguments, $agentId, $userId, $model, $n);
+            return $this->renderResponse($response, $prompt !== '' ? $prompt : 'variations of input image', $arguments, $agentId, $runnerId, $model, $n);
         });
     }
 
@@ -195,7 +198,7 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
      * @param array<string, mixed> $response
      * @param array<string, mixed> $arguments
      */
-    private function renderResponse(array $response, string $prompt, array $arguments, int $agentId, ?int $userId, string $model, int $expectedCount): ToolResult
+    private function renderResponse(array $response, string $prompt, array $arguments, int $agentId, ?int $runnerId, string $model, int $expectedCount): ToolResult
     {
         $items = $response['data'] ?? null;
         if (!is_array($items) || $items === []) {
@@ -214,7 +217,7 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
             $filename = $filenameStem !== null && $expectedCount > 1
                 ? $filenameStem . '-' . ($index + 1)
                 : $filenameStem;
-            $urls[] = $this->archive($item['b64_json'], $prompt, $filename, $agentId, $userId, (int) $index);
+            $urls[] = $this->archive($item['b64_json'], $prompt, $filename, $agentId, $runnerId, (int) $index);
         }
         if ($urls === []) {
             return new ToolResult(false, 'Image API returned no base64 image data.');
@@ -257,7 +260,7 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
         return mb_substr($collapsed, 0, 80) . '…';
     }
 
-    private function archive(string $base64, string $prompt, ?string $filename, int $agentId, ?int $userId, int $index): string
+    private function archive(string $base64, string $prompt, ?string $filename, int $agentId, ?int $runnerId, int $index): string
     {
         $bytes = base64_decode($base64, true);
         if ($bytes === false) {
@@ -275,7 +278,7 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
                 bytes: $bytes,
                 mime: 'image/png',
                 agentId: $agentId,
-                userId: $userId,
+                userId: $runnerId,
                 pluginSlug: 'openai-image',
                 toolName: 'image',
                 prompt: $prompt,
