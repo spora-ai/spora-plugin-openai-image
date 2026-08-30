@@ -1,6 +1,6 @@
 ---
 name: openai-image
-description: Generate images through the OpenAI-compatible image plugin. Two operations: `generate` (single image, no approval) and `generate_variations` (multiple images or semantic variations of an input image, approval-gated by default). Use when the user asks for an image, picture, illustration, photo, poster, thumbnail, icon, or other visual created from a text description.
+description: "Generate images through the OpenAI-compatible image plugin. Two operations: `generate` (single image, no approval) and `generate_variations` (multiple images or semantic variations of an input image, approval-gated by default). Use when the user asks for an image, picture, illustration, photo, poster, thumbnail, icon, or other visual created from a text description."
 license: MIT
 compatibility: spora>=0.15 spora-plugin-openai-image>=1.1
 metadata:
