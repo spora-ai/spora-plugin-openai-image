@@ -48,7 +48,7 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
     private ?OpenAIImageMediaArchiveResolver $mediaArchiveResolver = null;
 
     /**
-     * Wired by PHP-DI from {@see OpenAIImagePlugin::register()}.
+     * Wired by PHP-DI from {@see OpenAIImagePlugin::onContainerBuilding()}.
      * Optional: tools that don't take image inputs (none today) skip this.
      */
     public function setMediaArchiveResolver(?OpenAIImageMediaArchiveResolver $resolver): void

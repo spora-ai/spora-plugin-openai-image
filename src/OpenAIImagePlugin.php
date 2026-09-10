@@ -34,11 +34,6 @@ final class OpenAIImagePlugin extends AbstractPlugin implements EventSubscriberI
         return [OpenAIImageGenerationTool::class];
     }
 
-    public function schemaVersion(): int
-    {
-        return 1;
-    }
-
     public function skillPaths(): array
     {
         return [__DIR__ . '/../skills'];

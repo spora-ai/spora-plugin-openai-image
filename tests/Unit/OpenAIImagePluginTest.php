@@ -33,6 +33,7 @@ function openaiImageDefinitions(): array
     $dispatcher->dispatch(new ContainerBuildingEvent($builder));
 
     $reflection = new ReflectionObject($builder);
+    // nosonar php:S3011 -- PHP-DI v8 exposes no public API to read raw `definitionSources` after addDefinitions() but before build(); reflection is the only way to assert the helpers the subscriber registered.
     $sources    = $reflection->getProperty('definitionSources')->getValue($builder);
 
     return end($sources);
@@ -73,6 +74,7 @@ it('closure factory returns an OpenAIImageMediaArchiveResolver bound to the wrap
     // regex branch (`extractUuid`) returns null for a non-Media-Archive
     // URL, so the reader is never called and the original input is
     // returned through the closure's pass-through path.
+    // nosonar php:S3011 -- MediaAssetReader is `final` with a constructor that pulls real dependencies; the test only invokes readAsset() through the regex pass-through path, so the bypass is safe.
     $reader = (new ReflectionClass(MediaAssetReader::class))->newInstanceWithoutConstructor();
 
     $resolver = $closure($reader, null);

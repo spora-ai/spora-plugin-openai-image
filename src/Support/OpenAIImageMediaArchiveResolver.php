@@ -41,7 +41,7 @@ use Spora\Tools\ValueObjects\ToolResult;
  * the plugin can ship without depending on the `MediaAssetReader` type
  * directly (the host application's `MediaAssetReader` is `final` and
  * therefore not Mockery-friendly from a plugin test). The plugin's
- * {@see \Spora\Plugins\OpenAIImage\OpenAIImagePlugin::register()} wraps the
+ * {@see \Spora\Plugins\OpenAIImage\OpenAIImagePlugin::onContainerBuilding()} wraps the
  * core service in a one-line closure.
  */
 final class OpenAIImageMediaArchiveResolver
