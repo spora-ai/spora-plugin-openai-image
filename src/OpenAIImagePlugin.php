@@ -51,15 +51,22 @@ final class OpenAIImagePlugin extends AbstractPlugin implements EventSubscriberI
         ];
     }
 
-    /**
-     * Register the three DI bindings php-di cannot autowire. The
-     * media-archive resolver wraps the host's `final` {@see MediaAssetReader}
-     * in a closure so the plugin does not couple to that concrete type,
-     * keeping the plugin testable from a sibling checkout.
-     */
     public function onContainerBuilding(ContainerBuildingEvent $event): void
     {
-        $event->builder()->addDefinitions([
+        $event->builder()->addDefinitions($this->containerDefinitions());
+    }
+
+    /**
+     * Bindings registered with PHP-DI's {@see \DI\ContainerBuilder} by
+     * {@see onContainerBuilding()}. Extracted as a public method so the
+     * plugin tests can assert against the registered contract without
+     * reflecting on the builder's private state.
+     *
+     * @return array<string, mixed>
+     */
+    public function containerDefinitions(): array
+    {
+        return [
             OpenAIImageHttpClient::class => \DI\autowire(),
             OpenAIImageMediaArchiveResolver::class => static function (
                 MediaAssetReader $reader,
@@ -74,6 +81,6 @@ final class OpenAIImagePlugin extends AbstractPlugin implements EventSubscriberI
                 ->method('setMediaArchive', \DI\get(MediaArchiveService::class))
                 ->method('setMediaArchiveResolver', \DI\get(OpenAIImageMediaArchiveResolver::class))
                 ->method('setLogger', \DI\get(LoggerInterface::class)),
-        ]);
+        ];
     }
 }
