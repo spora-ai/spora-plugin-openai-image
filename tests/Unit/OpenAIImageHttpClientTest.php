@@ -183,3 +183,99 @@ it('rejects an unrecognised input_image scheme', function () {
         'n' => 2,
     ]))->toThrow(RuntimeException::class, 'http(s) URL or a data: URI');
 });
+
+it('rejects a data: URI with no comma separator', function () {
+    $http = M::mock(HttpClientInterface::class);
+    $http->shouldNotReceive('request');
+
+    expect(fn() => imageHttpClient($http)->generateVariations([
+        'input_image' => 'data:image/png;base64',
+        'n' => 2,
+    ]))->toThrow(RuntimeException::class, 'data URI is malformed');
+});
+
+it('rejects a data: URI whose payload is not valid base64', function () {
+    $http = M::mock(HttpClientInterface::class);
+    $http->shouldNotReceive('request');
+
+    expect(fn() => imageHttpClient($http)->generateVariations([
+        'input_image' => 'data:image/png;base64,!!! not base64 !!!',
+        'n' => 2,
+    ]))->toThrow(RuntimeException::class, 'data URI is not valid base64');
+});
+
+it('surfaces a transport failure while fetching an http(s) input_image', function () {
+    $transport = new class ('Could not resolve host.') extends RuntimeException implements TransportExceptionInterface {};
+
+    $http = M::mock(HttpClientInterface::class);
+    $http->shouldReceive('request')->once()->with('GET', 'https://example.com/seed.png', M::any())->andThrow($transport);
+
+    expect(fn() => imageHttpClient($http)->generateVariations([
+        'input_image' => 'https://example.com/seed.png',
+        'n' => 2,
+    ]))->toThrow(RuntimeException::class, 'Failed to fetch input_image: Could not resolve host.');
+});
+
+it('rejects an input_image URL that responds with an error status', function () {
+    $response = M::mock(ResponseInterface::class);
+    $response->shouldReceive('getStatusCode')->once()->andReturn(404);
+    $response->shouldReceive('getContent')->once()->with(false)->andReturn('Not Found');
+
+    $http = M::mock(HttpClientInterface::class);
+    $http->shouldReceive('request')->once()->with('GET', 'https://example.com/seed.png', M::any())->andReturn($response);
+
+    expect(fn() => imageHttpClient($http)->generateVariations([
+        'input_image' => 'https://example.com/seed.png',
+        'n' => 2,
+    ]))->toThrow(RuntimeException::class, 'Failed to fetch input_image: HTTP 404.');
+});
+
+it('does not retry a transport failure on the variations upload and points at n', function () {
+    $fetch = M::mock(ResponseInterface::class);
+    $fetch->shouldReceive('getStatusCode')->andReturn(200);
+    $fetch->shouldReceive('getContent')->with(false)->andReturn('PNGDATA');
+
+    $transport = new class ('Idle timeout reached for ".../images/variations".') extends RuntimeException implements TransportExceptionInterface {};
+
+    $http = M::mock(HttpClientInterface::class);
+    $http->shouldReceive('request')->once()->with('GET', 'https://example.com/seed.png', M::any())->andReturn($fetch);
+    $http->shouldReceive('request')->once()->andThrow($transport);
+
+    $caught = null;
+    try {
+        imageHttpClient($http, 90)->generateVariations([
+            'input_image' => 'https://example.com/seed.png',
+            'n' => 8,
+        ]);
+    } catch (RuntimeException $e) {
+        $caught = $e;
+    }
+
+    expect($caught)->not->toBeNull()
+        ->and($caught->getMessage())->toContain('lower n')
+        ->and($caught->getMessage())->toContain('90s');
+});
+
+it('rejects a 2xx response whose body is not JSON', function () {
+    $response = M::mock(ResponseInterface::class);
+    $response->shouldReceive('getStatusCode')->once()->andReturn(200);
+    $response->shouldReceive('getContent')->once()->with(false)->andReturn('<html>gateway</html>');
+
+    $http = M::mock(HttpClientInterface::class);
+    $http->shouldReceive('request')->once()->andReturn($response);
+
+    expect(fn() => imageHttpClient($http)->generate(['model' => HTTP_CLIENT_TEST_MODEL]))
+        ->toThrow(RuntimeException::class, 'non-JSON response');
+});
+
+it('falls back to a bare status line when the error body carries no message', function () {
+    $response = M::mock(ResponseInterface::class);
+    $response->shouldReceive('getStatusCode')->once()->andReturn(429);
+    $response->shouldReceive('getContent')->once()->with(false)->andReturn(json_encode(['error' => 'rate limited']));
+
+    $http = M::mock(HttpClientInterface::class);
+    $http->shouldReceive('request')->once()->andReturn($response);
+
+    expect(fn() => imageHttpClient($http)->generate(['model' => HTTP_CLIENT_TEST_MODEL]))
+        ->toThrow(RuntimeException::class, 'Image API returned HTTP 429.');
+});

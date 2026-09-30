@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Mockery as M;
 use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Spora\Plugins\OpenAIImage\Tools\OpenAIImageGenerationTool;
 use Spora\Services\ToolConfigService;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -142,4 +143,74 @@ it('does not break the markdown image tag when the prompt contains newlines and 
     expect($result->success)->toBeTrue();
     $imageTag = explode("\n\n", $result->content)[1] ?? '';
     expect($imageTag)->toMatch('/^!\[Generated image 1\]\([^)]+\)$/');
+});
+
+it('falls back to the built-in base URL and 600s timeout when the operator left them blank', function () {
+    $config = M::mock(ToolConfigService::class);
+    $config->shouldReceive('getEffectiveSettings')->andReturn([
+        'api_key' => 'sk-test',
+        'base_url' => '   ',
+        'http_timeout_seconds' => 0,
+    ]);
+
+    $response = M::mock(ResponseInterface::class);
+    $response->shouldReceive('getStatusCode')->andReturn(200);
+    $response->shouldReceive('getContent')->with(false)->andReturn(json_encode([
+        'data' => [['b64_json' => base64_encode('png')]],
+    ]));
+
+    $http = M::mock(HttpClientInterface::class);
+    $http->shouldReceive('request')->once()->withArgs(
+        fn(string $method, string $url, array $options): bool =>
+        $url === RUN_TEST_BASE_URL . '/images/generations'
+            && $options['timeout'] === RUN_TEST_TIMEOUT,
+    )->andReturn($response);
+
+    $result = (new OpenAIImageGenerationTool($config, $http))->execute([
+        'action' => 'generate',
+        'prompt' => RUN_TEST_PROMPT,
+    ], agentId: 1, userId: 1);
+
+    expect($result->success)->toBeTrue();
+});
+
+it('turns an upstream failure into a failed result and logs it against the injected logger', function () {
+    $logger = M::mock(LoggerInterface::class);
+    $logger->shouldReceive('error')
+        ->once()
+        ->withArgs(
+            fn(string $message, array $context): bool =>
+            $message === 'OpenAI-compatible image generation failed'
+                && ($context['exception'] ?? null) instanceof RuntimeException,
+        );
+
+    $http = M::mock(HttpClientInterface::class);
+    $http->shouldReceive('request')->andThrow(new RuntimeException('upstream exploded'));
+
+    $config = M::mock(ToolConfigService::class);
+    $config->shouldReceive('getEffectiveSettings')->andReturn(['api_key' => 'sk-test']);
+
+    $tool = new OpenAIImageGenerationTool($config, $http, new NullLogger());
+    $tool->setLogger($logger);
+
+    $result = $tool->execute(['action' => 'generate', 'prompt' => RUN_TEST_PROMPT], agentId: 1, userId: 1);
+
+    expect($result->success)->toBeFalse()
+        ->and($result->content)->toBe('Image generation failed: upstream exploded');
+});
+
+it('still reports the failure when no logger is wired at all', function () {
+    $http = M::mock(HttpClientInterface::class);
+    $http->shouldReceive('request')->andThrow(new RuntimeException('upstream exploded'));
+
+    $config = M::mock(ToolConfigService::class);
+    $config->shouldReceive('getEffectiveSettings')->andReturn(['api_key' => 'sk-test']);
+
+    $result = (new OpenAIImageGenerationTool($config, $http))->execute([
+        'action' => 'generate',
+        'prompt' => RUN_TEST_PROMPT,
+    ], agentId: 1, userId: 1);
+
+    expect($result->success)->toBeFalse()
+        ->and($result->content)->toBe('Image generation failed: upstream exploded');
 });

@@ -2,15 +2,23 @@
 
 declare(strict_types=1);
 
+use DI\ContainerBuilder;
 use DI\Definition\Helper\AutowireDefinitionHelper;
 use DI\Definition\Reference;
+use Mockery as M;
 use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Spora\Events\ContainerBuildingEvent;
 use Spora\Plugins\OpenAIImage\OpenAIImagePlugin;
 use Spora\Plugins\OpenAIImage\Support\OpenAIImageHttpClient;
 use Spora\Plugins\OpenAIImage\Support\OpenAIImageMediaArchiveResolver;
+use Spora\Plugins\OpenAIImage\Tests\Support\InMemoryMediaArchive;
 use Spora\Plugins\OpenAIImage\Tools\OpenAIImageGenerationTool;
 use Spora\Services\MediaArchive\MediaArchiveService;
+use Spora\Services\MediaArchive\MediaAssetReader;
+use Spora\Services\ToolConfigService;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
+use Symfony\Contracts\HttpClient\ResponseInterface;
 
 /**
  * Bindings the plugin registers with PHP-DI's ContainerBuilder. Each
@@ -51,14 +59,78 @@ it('registers OpenAIImageHttpClient via autowire()', function () {
 it('registers OpenAIImageMediaArchiveResolver via a closure factory', function () {
     $definitions = openaiImageDefinitions();
 
-    // The host's `MediaAssetReader` is `final` and pulls real storage
-    // dependencies from its constructor, so we cannot invoke the
-    // registered closure factory from a plugin test without bypassing
-    // its constructor. The factory's return type and pass-through
-    // behaviour are covered by `OpenAIImageMediaArchiveResolverTest` —
-    // here we only assert the binding shape the plugin hands to
-    // PHP-DI.
     expect($definitions[OpenAIImageMediaArchiveResolver::class])->toBeInstanceOf(Closure::class);
+});
+
+it('builds a resolver that reads Media Archive rows through the host reader', function () {
+    $harness = InMemoryMediaArchive::boot();
+    $harness->insertAsset(
+        '0d4f3c70-1234-5678-9abc-deadbeef0000',
+        'PNGBYTES',
+        'image/png',
+        'data_url',
+    );
+
+    $factory = openaiImageDefinitions()[OpenAIImageMediaArchiveResolver::class];
+    $resolver = $factory($harness->reader(), new NullLogger());
+
+    expect($resolver)->toBeInstanceOf(OpenAIImageMediaArchiveResolver::class)
+        ->and($resolver->resolveInputImage('0d4f3c70-1234-5678-9abc-deadbeef0000', InMemoryMediaArchive::USER_ID))
+        ->toBe(['resolved' => 'data:image/png;base64,' . base64_encode('PNGBYTES')]);
+});
+
+it('wires a tool that can generate a variation from a previously archived asset', function () {
+    $harness = InMemoryMediaArchive::boot();
+    $harness->insertAsset(
+        '0d4f3c70-1234-5678-9abc-deadbeef0000',
+        'PNGBYTES',
+        'image/png',
+        'data_url',
+    );
+
+    $config = M::mock(ToolConfigService::class);
+    $config->shouldReceive('getEffectiveSettings')->andReturn([
+        'api_key' => 'sk-test',
+        'base_url' => 'https://provider.example/v1',
+    ]);
+
+    $upload = M::mock(ResponseInterface::class);
+    $upload->shouldReceive('getStatusCode')->andReturn(200);
+    $upload->shouldReceive('getContent')->with(false)->andReturn(json_encode([
+        'data' => [['b64_json' => 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==']],
+    ]));
+
+    $http = M::mock(HttpClientInterface::class);
+    $http->shouldReceive('request')->andReturn($upload);
+
+    $builder = new ContainerBuilder();
+    $builder->addDefinitions([
+        ToolConfigService::class         => $config,
+        HttpClientInterface::class       => $http,
+        LoggerInterface::class           => new NullLogger(),
+        MediaArchiveService::class       => $harness->service(),
+        MediaAssetReader::class          => $harness->reader(),
+    ]);
+    (new OpenAIImagePlugin())->onContainerBuilding(new ContainerBuildingEvent($builder));
+
+    $tool = $builder->build()->get(OpenAIImageGenerationTool::class);
+
+    $result = $tool->execute([
+        'action'      => 'generate_variations',
+        'input_image' => '0d4f3c70-1234-5678-9abc-deadbeef0000',
+        'n'           => 2,
+    ], agentId: 1, userId: 1);
+
+    expect($result->success)->toBeTrue();
+});
+
+it('ships the skill and agent-template directories that ship with the plugin', function () {
+    $plugin = new OpenAIImagePlugin();
+
+    expect($plugin->skillPaths())->toHaveCount(1)
+        ->and(is_dir($plugin->skillPaths()[0]))->toBeTrue()
+        ->and($plugin->agentTemplatePaths())->toHaveCount(1)
+        ->and(is_dir($plugin->agentTemplatePaths()[0]))->toBeTrue();
 });
 
 it('chained setters on OpenAIImageGenerationTool wire MediaArchiveService, the resolver, and LoggerInterface', function () {
