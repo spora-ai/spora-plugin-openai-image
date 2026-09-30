@@ -247,13 +247,13 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
      * (markdown alt-text bloat breaks some renderers; long headings eat the chat
      * context). The full prompt stays available on `ToolResult.data.prompt` for
      * callers that need it.
+     *
+     * There is no empty case: `generate()` rejects a blank prompt, and
+     * `generateVariations()` substitutes a literal before rendering.
      */
     private function summarizePrompt(string $prompt): string
     {
         $collapsed = preg_replace('/\s+/', ' ', trim($prompt)) ?? trim($prompt);
-        if ($collapsed === '') {
-            return '(empty prompt)';
-        }
         if (mb_strlen($collapsed) <= 80) {
             return $collapsed;
         }
