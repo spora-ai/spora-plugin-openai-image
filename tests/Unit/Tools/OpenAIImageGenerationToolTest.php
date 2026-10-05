@@ -278,7 +278,11 @@ it('falls back to a positional filename when no stem is supplied', function () {
 it('records the ingest request against the running agent and user', function () {
     $archive = InMemoryMediaArchive::boot();
     $result = genTool(genHttpImages([['b64_json' => GEN_TOOL_PNG_BASE64]]), [], $archive->service())
-        ->execute(['prompt' => 'A lighthouse'], agentId: 1, userId: 1);
+        ->execute(
+            ['prompt' => 'A lighthouse'],
+            agentId: InMemoryMediaArchive::AGENT_ID,
+            context: $archive->context(),
+        );
 
     $row = $archive->findAsset(genAssetId($result->data['image_urls'][0]));
 
