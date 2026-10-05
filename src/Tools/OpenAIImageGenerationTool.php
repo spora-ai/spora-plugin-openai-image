@@ -56,6 +56,9 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
         $this->mediaArchiveResolver = $resolver;
     }
 
+    /**
+     * @param int|null $userId @deprecated pass $context->ownerUserId instead; removed from the interface in core 0.30.0.
+     */
     public function execute(
         array $arguments,
         int $agentId,
@@ -63,8 +66,10 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
         ?int $taskId = null,
         ?PrincipalContext $context = null,
     ): ToolResult {
-        $ownerId  = $context->ownerUserId ?? $userId;
-        $runnerId = $context->runnerUserId ?? $userId;
+        // `?->` / `??` so a null context degrades to an unattributed call
+        // instead of a fatal Error on 8.4 / silent coercion on 8.5.
+        $ownerId  = $context?->ownerUserId;
+        $runnerId = $context->runnerUserId ?? $ownerId;
 
         $arguments = $this->resolveInputImage($arguments, $runnerId);
         if ($arguments instanceof ToolResult) {

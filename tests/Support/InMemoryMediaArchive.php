@@ -9,6 +9,7 @@ use Psr\Log\NullLogger;
 use RuntimeException;
 use Spora\Core\Paths;
 use Spora\Core\SecurityManager;
+use Spora\Models\Principal;
 use Spora\Services\AssetStore;
 use Spora\Services\AutoAssetStore;
 use Spora\Services\DatabaseAssetStore;
@@ -23,6 +24,7 @@ use Spora\Services\MediaArchive\MediaIngestDecoder;
 use Spora\Services\MediaArchive\MetadataExtractor;
 use Spora\Services\MediaArchive\MimeSniffer;
 use Spora\Services\MediaArchive\RemoteMediaFetcher;
+use Spora\Services\PrincipalContext;
 use Spora\Services\PrincipalResolver;
 use Spora\Services\PrincipalService;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -82,6 +84,21 @@ final class InMemoryMediaArchive
         ]);
 
         return new self($capsule);
+    }
+
+    /**
+     * The context the orchestrator would supply for the seeded triple, so
+     * `execute()` sees the same owner/runner attribution production does
+     * rather than the deprecated `$userId` argument.
+     */
+    public function context(): PrincipalContext
+    {
+        return new PrincipalContext(
+            principalId: self::PRINCIPAL_ID,
+            type: Principal::TYPE_USER,
+            ownerUserId: self::USER_ID,
+            runnerUserId: self::USER_ID,
+        );
     }
 
     public function service(): MediaArchiveService
