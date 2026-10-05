@@ -114,8 +114,13 @@ final class InMemoryMediaArchive
     }
 
     /** Seed a row the reader can hand back, standing in for a previously generated asset. */
-    public function insertAsset(string $id, string $bytes, string $mime, string $storageMode = 'data_url'): void
-    {
+    public function insertAsset(
+        string $id,
+        string $bytes,
+        string $mime,
+        string $storageMode = 'data_url',
+        ?string $sourceUrl = null,
+    ): void {
         $this->capsule->getConnection()->table('media_assets')->insert([
             'id'           => $id,
             'agent_id'     => self::AGENT_ID,
@@ -127,6 +132,7 @@ final class InMemoryMediaArchive
             'byte_size'    => strlen($bytes),
             'asset_url'    => '/api/v1/assets/' . $id . '.png',
             'storage_mode' => $storageMode,
+            'source_url'   => $sourceUrl,
             'payload'      => $storageMode === 'data_url' ? $bytes : null,
         ]);
     }
