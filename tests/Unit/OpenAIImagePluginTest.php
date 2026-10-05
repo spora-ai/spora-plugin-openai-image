@@ -79,6 +79,60 @@ it('builds a resolver that reads Media Archive rows through the host reader', fu
         ->toBe(['resolved' => 'data:image/png;base64,' . base64_encode('PNGBYTES')]);
 });
 
+it('resolves an external row through the host reader', function () {
+    $harness = InMemoryMediaArchive::boot();
+    $harness->insertAsset(
+        '0d4f3c70-1234-5678-9abc-deadbeef0000',
+        'PNGBYTES',
+        'image/png',
+        'external',
+        'https://cdn.example.com/seed.png',
+    );
+
+    $factory = openaiImageDefinitions()[OpenAIImageMediaArchiveResolver::class];
+    $resolver = $factory($harness->reader(), new NullLogger());
+
+    expect($resolver->resolveInputImage('0d4f3c70-1234-5678-9abc-deadbeef0000', InMemoryMediaArchive::USER_ID))
+        ->toBe(['resolved' => 'https://cdn.example.com/seed.png']);
+});
+
+/**
+ * `source_url` is a nullable column, so a row can claim `external` storage
+ * while pointing nowhere. The host reader downgrades that to `null`, which
+ * must surface as the resolver's not-found failure — never as an empty
+ * `input_image` that the HTTP client then blames on the operator.
+ */
+it('fails an external row whose source_url is null instead of resolving an empty image', function () {
+    $harness = InMemoryMediaArchive::boot();
+    $harness->insertAsset(
+        '0d4f3c70-1234-5678-9abc-deadbeef0000',
+        'PNGBYTES',
+        'image/png',
+        'external',
+    );
+
+    $factory = openaiImageDefinitions()[OpenAIImageMediaArchiveResolver::class];
+    $resolver = $factory($harness->reader(), new NullLogger());
+
+    $raised = [];
+    set_error_handler(static function (int $errno, string $message) use (&$raised): bool {
+        $raised[] = $message;
+
+        return true;
+    });
+
+    try {
+        $result = $resolver->resolveInputImage('0d4f3c70-1234-5678-9abc-deadbeef0000', InMemoryMediaArchive::USER_ID);
+    } finally {
+        restore_error_handler();
+    }
+
+    expect($raised)->toBe([])
+        ->and($result)->toHaveKey('failed')
+        ->and($result['failed']->success)->toBeFalse()
+        ->and($result['failed']->content)->toContain('0d4f3c70-1234-5678-9abc-deadbeef0000');
+});
+
 it('wires a tool that can generate a variation from a previously archived asset', function () {
     $harness = InMemoryMediaArchive::boot();
     $harness->insertAsset(
