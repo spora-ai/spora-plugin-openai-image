@@ -56,7 +56,7 @@ it('does not typeerror when model is configured as a string (regression for the 
     $result = $tool->execute([
         'action' => 'generate',
         'prompt' => RUN_TEST_PROMPT,
-    ], agentId: 1, userId: 1);
+    ], agentId: 1);
 
     expect($result->success)->toBeTrue();
     expect($result->content)->toContain(RUN_TEST_PROMPT);
@@ -73,7 +73,7 @@ it('falls back to the default model when the configured value is empty', functio
     $result = $tool->execute([
         'action' => 'generate',
         'prompt' => RUN_TEST_PROMPT,
-    ], agentId: 1, userId: 1);
+    ], agentId: 1);
 
     expect($result->success)->toBeTrue();
 });
@@ -89,7 +89,7 @@ it('refuses to run when the api_key is missing', function () {
     $result = $tool->execute([
         'action' => 'generate',
         'prompt' => RUN_TEST_PROMPT,
-    ], agentId: 1, userId: 1);
+    ], agentId: 1);
 
     expect($result->success)->toBeFalse();
     expect($result->content)->toContain('API key');
@@ -111,7 +111,7 @@ it('summarises a long prompt in the markdown image tag (no full prompt in the al
     $result = $tool->execute([
         'action' => 'generate',
         'prompt' => $longPrompt,
-    ], agentId: 1, userId: 1);
+    ], agentId: 1);
 
     expect($result->success)->toBeTrue();
     // The block must NOT contain the full prompt verbatim — the alt text bloats
@@ -138,7 +138,7 @@ it('does not break the markdown image tag when the prompt contains newlines and 
     $result = $tool->execute([
         'action' => 'generate',
         'prompt' => $prompt,
-    ], agentId: 1, userId: 1);
+    ], agentId: 1);
 
     expect($result->success)->toBeTrue();
     $imageTag = explode("\n\n", $result->content)[1] ?? '';
@@ -169,7 +169,7 @@ it('falls back to the built-in base URL and 600s timeout when the operator left 
     $result = (new OpenAIImageGenerationTool($config, $http))->execute([
         'action' => 'generate',
         'prompt' => RUN_TEST_PROMPT,
-    ], agentId: 1, userId: 1);
+    ], agentId: 1);
 
     expect($result->success)->toBeTrue();
 });
@@ -193,7 +193,7 @@ it('turns an upstream failure into a failed result and logs it against the injec
     $tool = new OpenAIImageGenerationTool($config, $http, new NullLogger());
     $tool->setLogger($logger);
 
-    $result = $tool->execute(['action' => 'generate', 'prompt' => RUN_TEST_PROMPT], agentId: 1, userId: 1);
+    $result = $tool->execute(['action' => 'generate', 'prompt' => RUN_TEST_PROMPT], agentId: 1);
 
     expect($result->success)->toBeFalse()
         ->and($result->content)->toBe('Image generation failed: upstream exploded');
@@ -209,7 +209,7 @@ it('still reports the failure when no logger is wired at all', function () {
     $result = (new OpenAIImageGenerationTool($config, $http))->execute([
         'action' => 'generate',
         'prompt' => RUN_TEST_PROMPT,
-    ], agentId: 1, userId: 1);
+    ], agentId: 1);
 
     expect($result->success)->toBeFalse()
         ->and($result->content)->toBe('Image generation failed: upstream exploded');

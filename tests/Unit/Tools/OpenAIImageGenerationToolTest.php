@@ -104,7 +104,7 @@ it('rejects a generate call with a blank prompt before touching the API', functi
     $http = M::mock(HttpClientInterface::class);
     $http->shouldNotReceive('request');
 
-    $result = genTool($http)->execute(['action' => 'generate', 'prompt' => '   '], agentId: 1, userId: 1);
+    $result = genTool($http)->execute(['action' => 'generate', 'prompt' => '   '], agentId: 1);
 
     expect($result->success)->toBeFalse()
         ->and($result->content)->toBe('Prompt cannot be empty.');
@@ -114,7 +114,7 @@ it('rejects a variations call that has neither a prompt nor an input image', fun
     $http = M::mock(HttpClientInterface::class);
     $http->shouldNotReceive('request');
 
-    $result = genTool($http)->execute(['action' => 'generate_variations'], agentId: 1, userId: 1);
+    $result = genTool($http)->execute(['action' => 'generate_variations'], agentId: 1);
 
     expect($result->success)->toBeFalse()
         ->and($result->content)->toContain('requires either `prompt` or `input_image`');
@@ -128,7 +128,7 @@ it('clamps the variations count to the 2-8 range and defaults to 3 for a non-num
         'action' => 'generate_variations',
         'prompt' => 'A lighthouse',
         'n'      => $given,
-    ], agentId: 1, userId: 1);
+    ], agentId: 1);
 
     expect($result->success)->toBeTrue();
     expect(genJsonBody($requests[0])['n'])->toBe($expected);
@@ -148,7 +148,7 @@ it('sends prompt-based variations to the generations endpoint with the resolved 
         'action' => 'generate_variations',
         'prompt' => 'A lighthouse',
         'n'      => 4,
-    ], agentId: 1, userId: 1);
+    ], agentId: 1);
 
     expect($result->success)->toBeTrue()
         ->and($requests[0]['url'])->toBe(GEN_TOOL_BASE_URL . '/images/generations');
@@ -169,7 +169,7 @@ it('uploads the input image to the variations endpoint instead of sending a mode
         'input_image' => 'data:image/png;base64,' . GEN_TOOL_PNG_BASE64,
         'n'           => 2,
         'prompt'      => 'A lighthouse',
-    ], agentId: 1, userId: 1);
+    ], agentId: 1);
 
     expect($result->success)->toBeTrue();
 
@@ -195,7 +195,7 @@ it('forwards size, quality and background only when they differ from auto', func
         'size'       => '1024x1024',
         'quality'    => 'auto',
         'background' => 'transparent',
-    ], agentId: 1, userId: 1);
+    ], agentId: 1);
 
     $body = genJsonBody($requests[0]);
     expect($body)->toMatchArray(['size' => '1024x1024', 'background' => 'transparent']);
@@ -206,7 +206,7 @@ it('fails when the API response carries no data array', function () {
     $requests = [];
     $http = genHttpRecording($requests, ['created' => 1]);
 
-    $result = genTool($http)->execute(['prompt' => 'A lighthouse'], agentId: 1, userId: 1);
+    $result = genTool($http)->execute(['prompt' => 'A lighthouse'], agentId: 1);
 
     expect($result->success)->toBeFalse()
         ->and($result->content)->toBe('Image API returned no images.');
@@ -216,7 +216,7 @@ it('fails when no returned item carries base64 image data', function () {
     $requests = [];
     $http = genHttpRecording($requests, ['data' => [['url' => 'https://cdn.example/a.png'], ['b64_json' => '']]]);
 
-    $result = genTool($http)->execute(['prompt' => 'A lighthouse'], agentId: 1, userId: 1);
+    $result = genTool($http)->execute(['prompt' => 'A lighthouse'], agentId: 1);
 
     expect($result->success)->toBeFalse()
         ->and($result->content)->toBe('Image API returned no base64 image data.');
@@ -234,7 +234,7 @@ it('skips unusable items and archives the ones that carry base64 data', function
         'action'    => 'generate_variations',
         'prompt'    => 'A lighthouse',
         'n'         => 2,
-    ], agentId: 1, userId: 1);
+    ], agentId: 1);
 
     expect($result->success)->toBeTrue()
         ->and($result->data['image_urls'])->toHaveCount(1);
@@ -243,7 +243,7 @@ it('skips unusable items and archives the ones that carry base64 data', function
 it('names a single archived image after the filename stem verbatim', function () {
     $archive = InMemoryMediaArchive::boot();
     $result = genTool(genHttpImages([['b64_json' => GEN_TOOL_PNG_BASE64]]), [], $archive->service())
-        ->execute(['prompt' => 'A lighthouse', 'filename' => ' cover '], agentId: 1, userId: 1);
+        ->execute(['prompt' => 'A lighthouse', 'filename' => ' cover '], agentId: 1);
 
     expect($result->success)->toBeTrue()
         ->and($archive->findAsset(genAssetId($result->data['image_urls'][0]))['filename'])->toBe('cover.png');
@@ -259,7 +259,7 @@ it('suffixes the filename stem per image for a multi-image call', function () {
         'prompt'   => 'A lighthouse',
         'n'        => 2,
         'filename' => 'cover',
-    ], agentId: 1, userId: 1);
+    ], agentId: 1);
 
     expect($result->success)->toBeTrue()
         ->and($result->content)->toContain('Generated 2 images')
@@ -270,7 +270,7 @@ it('suffixes the filename stem per image for a multi-image call', function () {
 it('falls back to a positional filename when no stem is supplied', function () {
     $archive = InMemoryMediaArchive::boot();
     $result = genTool(genHttpImages([['b64_json' => GEN_TOOL_PNG_BASE64]]), [], $archive->service())
-        ->execute(['prompt' => 'A lighthouse'], agentId: 1, userId: 1);
+        ->execute(['prompt' => 'A lighthouse'], agentId: 1);
 
     expect($archive->findAsset(genAssetId($result->data['image_urls'][0]))['filename'])->toBe('openai-image-1.png');
 });
@@ -298,7 +298,7 @@ it('fails the whole call when the API returns base64 that cannot be decoded', fu
     $requests = [];
     $http = genHttpRecording($requests, ['data' => [['b64_json' => '!!! not base64 !!!']]]);
 
-    $result = genTool($http)->execute(['prompt' => 'A lighthouse'], agentId: 1, userId: 1);
+    $result = genTool($http)->execute(['prompt' => 'A lighthouse'], agentId: 1);
 
     expect($result->success)->toBeFalse()
         ->and($result->content)->toContain('Image API returned invalid base64 image data.');
@@ -306,7 +306,7 @@ it('fails the whole call when the API returns base64 that cannot be decoded', fu
 
 it('returns an inline data URI instead of an archive URL when the archive is absent', function () {
     $result = genTool(genHttpImages([['b64_json' => GEN_TOOL_PNG_BASE64]]))
-        ->execute(['prompt' => 'A lighthouse'], agentId: 1, userId: 1);
+        ->execute(['prompt' => 'A lighthouse'], agentId: 1);
 
     expect($result->data['image_urls'][0])->toStartWith('data:image/png;base64,');
 });
@@ -315,7 +315,7 @@ it('still succeeds with an inline data URI when the archive ingest fails', funct
     $harness = InMemoryMediaArchive::boot();
 
     $result = genTool(genHttpImages([['b64_json' => GEN_TOOL_PNG_BASE64]]), [], $harness->serviceWithFailingStore())
-        ->execute(['prompt' => 'A lighthouse'], agentId: 1, userId: 1);
+        ->execute(['prompt' => 'A lighthouse'], agentId: 1);
 
     expect($result->success)->toBeTrue()
         ->and($result->content)->toContain('Generated image')
@@ -326,12 +326,12 @@ it('stops archiving once setMediaArchive(null) detaches the service', function (
     $archive = InMemoryMediaArchive::boot();
     $tool = genTool(genHttpImages([['b64_json' => GEN_TOOL_PNG_BASE64]]), [], $archive->service());
 
-    $archived = $tool->execute(['prompt' => 'A lighthouse'], agentId: 1, userId: 1);
+    $archived = $tool->execute(['prompt' => 'A lighthouse'], agentId: 1);
     expect($archived->data['image_urls'][0])->toStartWith('/api/v1/assets/');
 
     $tool->setMediaArchive(null);
 
-    $inline = $tool->execute(['prompt' => 'A lighthouse'], agentId: 1, userId: 1);
+    $inline = $tool->execute(['prompt' => 'A lighthouse'], agentId: 1);
     expect($inline->success)->toBeTrue()
         ->and($inline->data['image_urls'][0])->toStartWith('data:image/png;base64,');
 });
@@ -344,7 +344,7 @@ it('leaves input_image untouched when no resolver is wired', function () {
         'action'      => 'generate_variations',
         'input_image' => GEN_TOOL_UUID,
         'n'           => 2,
-    ], agentId: 1, userId: 1);
+    ], agentId: 1);
 
     expect($result->success)->toBeFalse()
         ->and($result->content)->toContain('http(s) URL or a data: URI');
@@ -364,7 +364,7 @@ it('rewrites a resolved Media Archive reference into a data URI before uploading
         'action'      => 'generate_variations',
         'input_image' => GEN_TOOL_UUID,
         'n'           => 2,
-    ], agentId: 1, userId: 1);
+    ], agentId: 1);
 
     expect($result->success)->toBeTrue();
 
@@ -385,7 +385,7 @@ it('forwards the resolved source URL of an externally stored asset', function ()
         'action'      => 'generate_variations',
         'input_image' => GEN_TOOL_UUID,
         'n'           => 2,
-    ], agentId: 1, userId: 1);
+    ], agentId: 1);
 
     $fetch = array_values(array_filter($requests, static fn(array $r): bool => $r['method'] === 'GET'));
     expect($result->success)->toBeTrue()
@@ -403,7 +403,7 @@ it('returns the resolver failure to the caller without calling the API', functio
         'action'      => 'generate_variations',
         'input_image' => GEN_TOOL_UUID,
         'n'           => 2,
-    ], agentId: 1, userId: 1);
+    ], agentId: 1);
 
     expect($result->success)->toBeFalse()
         ->and($result->content)->toContain('not found');
@@ -422,7 +422,7 @@ it('skips the resolver when input_image is absent or blank', function (?string $
         'prompt'      => 'A lighthouse',
         'input_image' => $inputImage,
         'n'           => 2,
-    ], agentId: 1, userId: 1);
+    ], agentId: 1);
 
     expect($result->success)->toBeTrue();
 })->with([

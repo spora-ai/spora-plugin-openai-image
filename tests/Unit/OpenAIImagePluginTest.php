@@ -173,7 +173,7 @@ it('wires a tool that can generate a variation from a previously archived asset'
         'action'      => 'generate_variations',
         'input_image' => '0d4f3c70-1234-5678-9abc-deadbeef0000',
         'n'           => 2,
-    ], agentId: 1, userId: 1);
+    ], agentId: 1);
 
     expect($result->success)->toBeTrue();
 });
