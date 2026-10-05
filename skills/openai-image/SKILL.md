@@ -6,7 +6,7 @@ compatibility: spora>=0.15 spora-plugin-openai-image>=1.1
 metadata:
   author: spora-ai
   version: "1.1"
-allowed-tools: Spora\Plugins\OpenAIImage\Tools\OpenAIImageGenerationTool
+allowed-tools: image_openai
 ---
 
 # OpenAI-compatible image generation
