@@ -19,7 +19,7 @@ use Spora\Services\MediaArchive\MediaArchiveIngestPipeline;
 use Spora\Services\MediaArchive\MediaArchiveService;
 use Spora\Services\MediaArchive\MediaArchiveUrlResolver;
 use Spora\Services\MediaArchive\MediaAssetReader;
-use Spora\Services\MediaArchive\MediaConverterRegistry;
+use Spora\Services\MediaArchive\MediaDerivativeService;
 use Spora\Services\MediaArchive\MediaIngestDecoder;
 use Spora\Services\MediaArchive\MetadataExtractor;
 use Spora\Services\MediaArchive\MimeSniffer;
@@ -165,23 +165,35 @@ final class InMemoryMediaArchive
     {
         $logger = new NullLogger();
         $sniffer = new MimeSniffer();
+        $principalService = new PrincipalService(new PrincipalResolver());
 
-        return new MediaArchiveService(new MediaArchiveIngestPipeline(
-            new MediaIngestDecoder(),
-            new MediaArchiveUrlResolver(
-                new RemoteMediaFetcher(new MockHttpClient([]), $logger, 30, 1024 * 1024),
+        // Core 0.30.0 dropped the MediaConverterRegistry seam for this: a
+        // derivative is now produced by MediaDerivativeService, which resolves
+        // a `MediaDerivativeProducerInterface` through the DI container. No
+        // producer is registered here, so `ensureTextDerivative()` finds none,
+        // returns null and never reaches the container — ThrowingContainer
+        // stands in for "the host wired no producer", keeping a regression
+        // that starts probing producers loud instead of silently passing.
+        $derivatives = new MediaDerivativeService($store, $principalService, new ThrowingContainer());
+
+        return new MediaArchiveService(
+            new MediaArchiveIngestPipeline(
+                new MediaIngestDecoder(),
+                new MediaArchiveUrlResolver(
+                    new RemoteMediaFetcher(new MockHttpClient([]), $logger, 30, 1024 * 1024),
+                    $sniffer,
+                    $logger,
+                    true,
+                    1024 * 1024,
+                ),
                 $sniffer,
-                $logger,
-                true,
-                1024 * 1024,
+                new MetadataExtractor($logger, false),
+                $store,
+                $derivatives,
+                $principalService,
             ),
-            $sniffer,
-            new MetadataExtractor($logger, false),
-            $store,
-            new MediaConverterRegistry(new ThrowingContainer()),
-            new PrincipalService(new PrincipalResolver()),
-            $logger,
-        ));
+            $derivatives,
+        );
     }
 
     private function localStore(): LocalAssetStore
