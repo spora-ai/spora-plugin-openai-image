@@ -35,8 +35,10 @@ jobs:
           coverage: none
           tools: composer
 
-      - name: Composer install
-        run: composer install --no-interaction --prefer-dist
+      - name: Resolve spora-core from Packagist
+        # `update` (not `install`) so CI resolves the declared `>=0.30.0 <2.0.0`
+        # floor against the real release instead of a pinned local checkout.
+        run: composer update spora-ai/spora-core --with-all-dependencies --no-interaction --prefer-dist
 
       - name: Run Pest
         run: ./vendor/bin/pest
@@ -55,8 +57,10 @@ jobs:
           coverage: none
           tools: composer
 
-      - name: Composer install
-        run: composer install --no-interaction --prefer-dist
+      - name: Resolve spora-core from Packagist
+        # `update` (not `install`) so CI resolves the declared `>=0.30.0 <2.0.0`
+        # floor against the real release instead of a pinned local checkout.
+        run: composer update spora-ai/spora-core --with-all-dependencies --no-interaction --prefer-dist
 
       - name: Run PHPStan
         run: ./vendor/bin/phpstan analyse --no-progress --memory-limit=2G
@@ -75,8 +79,10 @@ jobs:
           coverage: none
           tools: composer
 
-      - name: Composer install
-        run: composer install --no-interaction --prefer-dist
+      - name: Resolve spora-core from Packagist
+        # `update` (not `install`) so CI resolves the declared `>=0.30.0 <2.0.0`
+        # floor against the real release instead of a pinned local checkout.
+        run: composer update spora-ai/spora-core --with-all-dependencies --no-interaction --prefer-dist
 
       - name: Check code style
         # Same ruleset as Spora core's .php-cs-fixer.php so plugin style matches host.
@@ -100,8 +106,10 @@ jobs:
           coverage: xdebug
           tools: composer
 
-      - name: Composer install
-        run: composer install --no-interaction --prefer-dist
+      - name: Resolve spora-core from Packagist
+        # `update` (not `install`) so CI resolves the declared `>=0.30.0 <2.0.0`
+        # floor against the real release instead of a pinned local checkout.
+        run: composer update spora-ai/spora-core --with-all-dependencies --no-interaction --prefer-dist
 
       - name: Generate clover coverage report
         run: ./vendor/bin/pest --coverage-clover=coverage.xml

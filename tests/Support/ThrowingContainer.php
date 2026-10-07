@@ -6,11 +6,14 @@ namespace Spora\Plugins\OpenAIImage\Tests\Support;
 
 use Psr\Container\ContainerInterface;
 use RuntimeException;
+use Spora\Services\MediaArchive\MediaDerivativeProducerInterface;
+use Spora\Services\MediaArchive\MediaDerivativeService;
 
 /**
- * Stand-in for the DI container the media-converter registry probes. No
- * converter is registered in these tests, so a lookup is a programming
- * error rather than something to simulate.
+ * Stand-in for the DI container {@see MediaDerivativeService} probes when it
+ * resolves a registered {@see MediaDerivativeProducerInterface}. No producer is
+ * registered in these tests, so a lookup is a programming error rather than
+ * something to simulate.
  */
 final class ThrowingContainer implements ContainerInterface
 {
