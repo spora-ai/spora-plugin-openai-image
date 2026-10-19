@@ -44,6 +44,37 @@ final class OpenAIImagePlugin extends AbstractPlugin implements EventSubscriberI
         return [__DIR__ . '/../agent-templates'];
     }
 
+    /**
+     * Translation catalogues this plugin ships, declared through
+     * {@see \Spora\Plugins\PluginInterface::translationsPaths()}.
+     *
+     * Keys are the English source text — `de.json` reads
+     * `{"Image model identifier.": "Bezeichner des Bildmodells."}`, not
+     * `{"model": "…"}`. That is what makes the host's `i18n:check` able to
+     * fail when a string is edited without being re-translated: the key
+     * changes and the old entry orphans.
+     *
+     * **Only operator copy belongs in here.** A string the model reads is
+     * never translated: not `#[Tool].description`, not either
+     * `#[ToolOperation].description`, not any `#[ToolParameter].description`,
+     * and not `ToolResult` content. `#[ToolSetting].label` is excluded for
+     * the usual reason, and the `size` / `quality` / `background`
+     * `#[ToolParameter]` enums are wire values. `locales/de.json` holds
+     * the tool's `#[Tool].displayName` and the four
+     * `#[ToolSetting].description` values and nothing else.
+     *
+     * Requires `spora-core >= 0.31.0` at runtime; older versions fail to
+     * resolve the method when the loader is strict.
+     *
+     * @return string[]
+     */
+    public function translationsPaths(): array
+    {
+        return [
+            __DIR__ . '/../locales',
+        ];
+    }
+
     public static function getSubscribedEvents(): array
     {
         return [

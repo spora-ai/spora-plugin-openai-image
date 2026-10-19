@@ -1,0 +1,7 @@
+{
+  "OpenAI Image": "OpenAI-Bild",
+  "API key for the configured image API.": "API-Schlüssel für die konfigurierte Bild-API.",
+  "OpenAI-compatible API base URL. The images endpoint is appended automatically.": "OpenAI-kompatible Basis-URL der API. Der Endpunkt für Bilder wird automatisch angehängt.",
+  "Image model identifier.": "Bezeichner des Bildmodells.",
+  "Per-request timeout. Default 600 seconds. Lower if you only need single-image drafts; raise above 600 if `generate_variations(n: 8)` at high quality still hits the idle timeout.": "Zeitlimit pro Anfrage. Standard sind 600 Sekunden. Niedriger einstellen, wenn nur einzelne Bildentwürfe gebraucht werden; über 600 anheben, wenn `generate_variations(n: 8)` in hoher Qualität weiterhin das Leerlauf-Zeitlimit erreicht."
+}
