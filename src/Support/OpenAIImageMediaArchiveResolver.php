@@ -10,39 +10,22 @@ use Spora\Tools\ValueObjects\ToolResult;
 
 /**
  * Resolve Spora Media Archive UUIDs and opaque `/api/v1/assets/<uuid>.<ext>`
- * URLs in the `input_image` argument of a `generate_variations` call into a
- * forwardable form before the HTTP client fetches the bytes.
+ * URLs into a form the image API can fetch.
  *
- * Pattern: the LLM calls `image_openai(action: "generate_variations",
- * input_image: "<uuid>")` after discovering a Media Archive asset via a
- * previous `generate` call (whose `image_urls[]` are `/api/v1/assets/<token>.<ext>`).
- * The asset URL or UUID is then the only thing the LLM has to feed forward
- * — the actual bytes never enter the chat context. The resolver reads the
- * bytes server-side, base64-encodes them, and replaces the argument with a
- * `data:` URI in the same slot.
+ * The bytes never enter the chat context: the resolver reads them server-side
+ * and either inlines them as a `data:` URI (`data_url` and `local` storage) or
+ * forwards the CDN `source_url` (`external`). An unknown or inaccessible asset
+ * yields a failed `ToolResult` with an actionable message, so the model can
+ * self-correct instead of retrying.
  *
- * Three resolved forms:
- *   - `data_url` (DB BLOB) → `data:<mime>;base64,<payload>` (inlined)
- *   - `local` (disk)       → `data:<mime>;base64,<payload>` (loaded + encoded)
- *   - `external` (CDN)     → the original `source_url` (forwarded as-is;
- *                            the HTTP client fetches it server-side)
+ * Size cap: 25 MB on the resulting `data:` URI. The OpenAI
+ * `/v1/images/variations` endpoint accepts PNG inputs up to 4 MB; the cap
+ * leaves headroom for more permissive endpoints while still rejecting runaway
+ * inputs before the upstream charges for them.
  *
- * For UUIDs that don't exist or aren't accessible to the caller, the resolver
- * returns a failed `ToolResult` with an LLM-actionable message — surfacing the
- * failure is the whole point: the LLM can self-correct (regenerate, paste a
- * public URL, …) without a retry.
- *
- * Size cap: 25 MB on the resulting `data:` URI. The OpenAI `/v1/images/variations`
- * endpoint accepts PNG inputs up to 4 MB; the resolver caps at 25 MB to leave
- * headroom for endpoints that are more permissive, while still rejecting
- * runaway inputs before the upstream charges for them.
- *
- * The reader is taken as a closure rather than a concrete service class so
- * the plugin can ship without depending on the `MediaAssetReader` type
- * directly (the host application's `MediaAssetReader` is `final` and
- * therefore not Mockery-friendly from a plugin test). The plugin's
- * {@see \Spora\Plugins\OpenAIImage\OpenAIImagePlugin::onContainerBuilding()} wraps the
- * core service in a one-line closure.
+ * The reader arrives as a closure rather than a concrete service so the plugin
+ * does not depend on the host's `final`
+ * {@see \Spora\Services\MediaArchive\MediaAssetReader}.
  */
 final class OpenAIImageMediaArchiveResolver
 {
@@ -65,8 +48,8 @@ final class OpenAIImageMediaArchiveResolver
 
     /**
      * Scan a single `input_image` argument and replace any Media Archive UUID
-     * or opaque URL with an inline `data:` URI (or forward the `source_url`
-     * for external storage).
+     * or opaque URL with an inline `data:` URI, or with the `source_url` for
+     * external storage.
      *
      * @return array{resolved: string}|array{failed: ToolResult}
      */
@@ -74,9 +57,8 @@ final class OpenAIImageMediaArchiveResolver
     {
         $uuid = $this->extractUuid($inputImage);
         if ($uuid === null) {
-            // Not a Media Archive UUID or opaque URL — pass through. The
-            // HTTP client will validate that it's http(s) or data:/ before
-            // sending the request.
+            // Not a Media Archive UUID or opaque URL — pass through. The HTTP
+            // client rejects anything that is neither http(s) nor a data: URI.
             return ['resolved' => $inputImage];
         }
 

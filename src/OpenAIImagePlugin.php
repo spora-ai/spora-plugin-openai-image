@@ -15,11 +15,9 @@ use Spora\Services\MediaArchive\MediaAssetReader;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
- * Subscribes to {@see ContainerBuildingEvent} for the three DI bindings
- * php-di cannot autowire: the HTTP client, the media-archive resolver
- * (wraps {@see MediaAssetReader} as a closure so the plugin does not
- * couple to the host's `final` reader), and the generation tool's
- * method-injected dependencies.
+ * Binds what php-di cannot infer. The media-archive resolver wraps
+ * {@see MediaAssetReader} as a closure so the plugin does not couple to the
+ * host's `final` reader.
  */
 final class OpenAIImagePlugin extends AbstractPlugin implements EventSubscriberInterface
 {
@@ -45,29 +43,7 @@ final class OpenAIImagePlugin extends AbstractPlugin implements EventSubscriberI
     }
 
     /**
-     * Translation catalogues this plugin ships, declared through
-     * {@see \Spora\Plugins\PluginInterface::translationsPaths()}.
-     *
-     * Keys are the English source text — `de.json` reads
-     * `{"Image model identifier.": "Bezeichner des Bildmodells."}`, not
-     * `{"model": "…"}`. That is what makes a copy edit detectable: the key
-     * changes and the old entry orphans. The gate is this plugin's own
-     * `LocaleCatalogTest`, not the host's `i18n:check` — that command
-     * harvests core's `app/` and reads core's `locales/en.json`, so run
-     * against a plugin repo it reports every catalogue key as an orphan.
-     *
-     * **Only operator copy belongs in here.** A string the model reads is
-     * never translated: not `#[Tool].description`, not either
-     * `#[ToolOperation].description`, not any `#[ToolParameter].description`,
-     * and not `ToolResult` content. `#[ToolSetting].label` is excluded for
-     * the usual reason, and the `size` / `quality` / `background`
-     * `#[ToolParameter]` enums are wire values. `locales/de.json` holds
-     * the tool's `#[Tool].displayName`, the four
-     * `#[ToolSetting].description` values and the manifest description.
-     *
-     * Requires `spora-core >= 0.31.0` for the catalogue to be loaded. On an
-     * older core the host never calls this hook and the plugin renders in
-     * English.
+     * The plugin's `locales/` directory — one `<lang>.json` per language.
      *
      * @return string[]
      */
@@ -91,10 +67,8 @@ final class OpenAIImagePlugin extends AbstractPlugin implements EventSubscriberI
     }
 
     /**
-     * Bindings registered with PHP-DI's {@see \DI\ContainerBuilder} by
-     * {@see onContainerBuilding()}. Extracted as a public method so the
-     * plugin tests can assert against the registered contract without
-     * reflecting on the builder's private state.
+     * The bindings {@see onContainerBuilding()} registers. A public method so
+     * the tests can assert the contract without reflecting on the builder.
      *
      * @return array<string, mixed>
      */

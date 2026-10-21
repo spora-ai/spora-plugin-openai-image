@@ -48,8 +48,8 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
     private ?OpenAIImageMediaArchiveResolver $mediaArchiveResolver = null;
 
     /**
-     * Wired by PHP-DI from {@see OpenAIImagePlugin::onContainerBuilding()}.
-     * Optional: tools that don't take image inputs (none today) skip this.
+     * Wired by PHP-DI from {@see OpenAIImagePlugin::onContainerBuilding()};
+     * null when the container has no media archive.
      */
     public function setMediaArchiveResolver(?OpenAIImageMediaArchiveResolver $resolver): void
     {
@@ -63,7 +63,7 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
         ?PrincipalContext $context = null,
     ): ToolResult {
         // `?->` / `??` so a null context degrades to an unattributed call
-        // instead of a fatal Error on 8.4 / silent coercion on 8.5.
+        // instead of a warning from reading a property on null.
         $ownerId  = $context?->ownerUserId;
         $runnerId = $context->runnerUserId ?? $ownerId;
 
@@ -81,11 +81,10 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
 
     /**
      * Resolve a Media Archive reference in `input_image` before the
-     * per-operation closures capture `$arguments`. The `fn()` closure
-     * inside `run()` captures `$arguments` by value at definition time,
-     * so the resolver must run at the entry point — not inside the
-     * per-operation method — to ensure the rewritten URL reaches the
-     * HTTP client.
+     * per-operation closures capture `$arguments`. The closure inside
+     * `run()` captures `$arguments` by value where it is defined, so the
+     * resolver has to run at the entry point for the rewritten URL to reach
+     * the HTTP client.
      *
      * @param  array<string, mixed> $arguments
      * @return array<string, mixed>|ToolResult
@@ -161,11 +160,10 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
             $body = ['n' => $n];
             $this->appendOptionalFields($body, $arguments);
             if ($inputImage === '') {
-                // Prompt-based variations: stays on /v1/images/generations.
                 $body['model'] = $model;
                 $body['prompt'] = $prompt;
             } else {
-                // Image-based variations: /v1/images/variations ignores model / quality / background upstream.
+                // /v1/images/variations ignores model / quality / background upstream.
                 $body['input_image'] = $inputImage;
             }
 
@@ -243,11 +241,10 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
     }
 
     /**
-     * First 80 chars of the prompt, with newlines and surrounding quotes collapsed.
-     * The markdown image tag's alt text and the heading have strict size limits
-     * (markdown alt-text bloat breaks some renderers; long headings eat the chat
-     * context). The full prompt stays available on `ToolResult.data.prompt` for
-     * callers that need it.
+     * First 80 chars of the prompt, with newlines and surrounding quotes
+     * collapsed — the heading and the image alt text both carry it, and a long
+     * heading eats the chat context. The full prompt stays available on
+     * `ToolResult.data.prompt` for callers that need it.
      *
      * There is no empty case: `generate()` rejects a blank prompt, and
      * `generateVariations()` substitutes a literal before rendering.
