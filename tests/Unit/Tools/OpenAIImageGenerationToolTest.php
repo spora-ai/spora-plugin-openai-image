@@ -25,14 +25,21 @@ const GEN_TOOL_DEFAULT_SETTINGS = [
 ];
 
 /**
- * @param list<array{method: string, url: string, options: array<string, mixed>}> $requests
+ * @param list<array{method: string, url: string, options: array<string, mixed>, image_bytes: ?string}> $requests
  */
 function genHttpRecording(array &$requests, mixed $body, int $status = 200): HttpClientInterface
 {
     $http = M::mock(HttpClientInterface::class);
     $http->shouldReceive('request')->andReturnUsing(
         function (string $method, string $url, array $options) use (&$requests, $body, $status): ResponseInterface {
-            $requests[] = ['method' => $method, 'url' => $url, 'options' => $options];
+            $requests[] = [
+                'method' => $method,
+                'url' => $url,
+                'options' => $options,
+                // The staged image file is removed once the request returns,
+                // so its bytes are read while the request is still building.
+                'image_bytes' => genStagedImageBytes($options),
+            ];
             $response = M::mock(ResponseInterface::class);
             $response->shouldReceive('getStatusCode')->andReturn($status);
             $response->shouldReceive('getContent')->with(false)->andReturn(json_encode($body));
@@ -40,6 +47,24 @@ function genHttpRecording(array &$requests, mixed $body, int $status = 200): Htt
         },
     );
     return $http;
+}
+
+/**
+ * The bytes staged for the multipart image part, or null when the request
+ * carries no image.
+ *
+ * @param array<string, mixed> $options
+ */
+function genStagedImageBytes(array $options): ?string
+{
+    $stream = $options['body']['image'] ?? null;
+    if (!is_resource($stream)) {
+        return null;
+    }
+
+    $path = (string) stream_get_meta_data($stream)['uri'];
+
+    return $path === '' ? null : (string) file_get_contents($path);
 }
 
 /** @param array{method: string, url: string, options: array<string, mixed>} $request */
@@ -177,12 +202,9 @@ it('uploads the input image to the variations endpoint instead of sending a mode
     expect($upload)->toHaveCount(1)
         ->and($upload[0]['url'])->toBe(GEN_TOOL_BASE_URL . '/images/variations');
 
-    $fields = [];
-    foreach ($upload[0]['options']['multipart'] as $part) {
-        $fields[$part['name']] = $part['contents'];
-    }
-    expect($fields)->not->toHaveKey('prompt')
-        ->and($fields)->not->toHaveKey('model');
+    $fields = array_keys((array) ($upload[0]['options']['body'] ?? []));
+    expect($fields)->not->toContain('prompt')
+        ->and($fields)->not->toContain('model');
 });
 
 it('forwards size, quality and background only when they differ from auto', function () {
@@ -369,7 +391,7 @@ it('rewrites a resolved Media Archive reference into a data URI before uploading
     expect($result->success)->toBeTrue();
 
     $upload = array_values(array_filter($requests, static fn(array $r): bool => $r['method'] === 'POST'));
-    expect($upload[0]['options']['multipart'][0]['contents'])->toBe('PNGBYTES');
+    expect($upload[0]['image_bytes'])->toBe('PNGBYTES');
 });
 
 it('forwards the resolved source URL of an externally stored asset', function () {

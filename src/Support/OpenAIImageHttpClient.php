@@ -88,17 +88,22 @@ final class OpenAIImageHttpClient
      * `image` (file), `n`, and `size` here — `prompt`, `quality`, and `background`
      * are not supported on the variations endpoint and are stripped if present.
      *
+     * Symfony's HttpClient has no `multipart` option — it rejects the request
+     * with `Unsupported option "multipart"`. It flips an array `body` to
+     * `multipart/form-data` as soon as one value is a stream resource
+     * ({@see \Symfony\Component\HttpClient\HttpClientTrait::normalizeBody()}),
+     * so the image goes up as a resource and the scalar fields as strings.
+     *
      * @param array<string, mixed> $body
      */
     private function postMultipart(string $path, array $body, string $inputImage): ResponseData
     {
-        $multipart = [
-            ['name' => 'image', 'contents' => $this->fetchImage($inputImage), 'filename' => 'input.png'],
-        ];
+        $image = $this->stageImage($this->fetchImage($inputImage));
 
+        $fields = ['image' => $image['stream']];
         foreach (['n', 'size'] as $field) {
             if (isset($body[$field]) && $body[$field] !== '' && $body[$field] !== 'auto') {
-                $multipart[] = ['name' => $field, 'contents' => (string) $body[$field]];
+                $fields[$field] = (string) $body[$field];
             }
         }
 
@@ -107,9 +112,10 @@ final class OpenAIImageHttpClient
                 'headers' => [
                     'Authorization' => 'Bearer ' . $this->apiKey,
                 ],
-                'multipart' => $multipart,
+                'body' => $fields,
                 'timeout' => $this->timeoutSeconds,
             ]);
+            $raw = $response->getContent(false);
         } catch (TransportExceptionInterface $e) {
             throw new OpenAIImageException(
                 'Image API request failed: ' . $e->getMessage()
@@ -117,10 +123,56 @@ final class OpenAIImageHttpClient
                 $this->timeoutSeconds,
                 $e,
             );
+        } finally {
+            $this->discardStagedImage($image);
         }
 
-        $raw = $response->getContent(false);
         return new ResponseData($response->getStatusCode(), $raw, json_decode($raw, true));
+    }
+
+    /**
+     * Stage the image bytes in a temp file and open them as a stream.
+     *
+     * Symfony takes the multipart filename from the basename of the stream's
+     * path, so the bytes go into a temp directory under the name `input.png`
+     * — the name and the `.png` extension the upstream variations endpoint
+     * expects for the image part.
+     *
+     * @return array{stream: resource, path: string, dir: string}
+     */
+    private function stageImage(string $bytes): array
+    {
+        $dir = sys_get_temp_dir() . '/spora_openai_image_' . bin2hex(random_bytes(8));
+        if (!mkdir($dir, 0700)) {
+            throw new OpenAIImageException('Failed to stage the input image for upload.', $this->timeoutSeconds);
+        }
+
+        $path = $dir . '/input.png';
+        if (file_put_contents($path, $bytes) === false) {
+            @rmdir($dir);
+            throw new OpenAIImageException('Failed to stage the input image for upload.', $this->timeoutSeconds);
+        }
+
+        $stream = fopen($path, 'rb');
+        if ($stream === false) {
+            @unlink($path);
+            @rmdir($dir);
+            throw new OpenAIImageException('Failed to stage the input image for upload.', $this->timeoutSeconds);
+        }
+
+        return ['stream' => $stream, 'path' => $path, 'dir' => $dir];
+    }
+
+    /**
+     * @param array{stream: resource, path: string, dir: string} $image
+     */
+    private function discardStagedImage(array $image): void
+    {
+        if (is_resource($image['stream'])) {
+            fclose($image['stream']);
+        }
+        @unlink($image['path']);
+        @rmdir($image['dir']);
     }
 
     /**

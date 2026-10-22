@@ -23,6 +23,30 @@ function imageHttpClient(HttpClientInterface $http, int $timeout = HTTP_CLIENT_T
     return new OpenAIImageHttpClient($http, HTTP_CLIENT_TEST_API_KEY, HTTP_CLIENT_TEST_BASE_URL, $timeout);
 }
 
+/**
+ * Snapshot the upload body while the request is being built: the staged
+ * image file is removed as soon as the request returns, and the stream is
+ * closed with it.
+ *
+ * @param array<string, mixed> $options
+ * @return array{fields: list<string>, n: mixed, size: mixed, filename: string, bytes: string, is_stream: bool}
+ */
+function imageUploadSnapshot(array $options): array
+{
+    $body = (array) ($options['body'] ?? []);
+    $stream = $body['image'] ?? null;
+    $path = is_resource($stream) ? (string) stream_get_meta_data($stream)['uri'] : '';
+
+    return [
+        'fields'    => array_keys($body),
+        'n'         => $body['n'] ?? null,
+        'size'      => $body['size'] ?? null,
+        'filename'  => $path === '' ? '' : basename($path),
+        'bytes'     => $path === '' ? '' : (string) file_get_contents($path),
+        'is_stream' => is_resource($stream),
+    ];
+}
+
 it('posts an OpenAI-compatible generation request with bearer authentication', function () {
     $response = M::mock(ResponseInterface::class);
     $response->shouldReceive('getStatusCode')->once()->andReturn(200);
@@ -113,6 +137,8 @@ it('routes generateVariations with input_image to the multipart variations endpo
     $fetchResponse->shouldReceive('getStatusCode')->once()->andReturn(200);
     $fetchResponse->shouldReceive('getContent')->once()->with(false)->andReturn('PNGDATA');
 
+    $upload = null;
+
     $http = M::mock(HttpClientInterface::class);
     $http->shouldReceive('request')
         ->once()
@@ -120,18 +146,10 @@ it('routes generateVariations with input_image to the multipart variations endpo
         ->andReturn($fetchResponse);
     $http->shouldReceive('request')
         ->once()
-        ->withArgs(function (string $method, string $url, array $options): bool {
+        ->withArgs(function (string $method, string $url, array $options) use (&$upload): bool {
+            $upload = imageUploadSnapshot($options);
             return $method === 'POST'
-                && $url === HTTP_CLIENT_TEST_BASE_URL . '/images/variations'
-                && isset($options['multipart'])
-                && count($options['multipart']) === 3
-                && $options['multipart'][0]['name'] === 'image'
-                && $options['multipart'][0]['contents'] === 'PNGDATA'
-                && $options['multipart'][0]['filename'] === 'input.png'
-                && $options['multipart'][1]['name'] === 'n'
-                && $options['multipart'][1]['contents'] === '4'
-                && $options['multipart'][2]['name'] === 'size'
-                && $options['multipart'][2]['contents'] === '1024x1024';
+                && $url === HTTP_CLIENT_TEST_BASE_URL . '/images/variations';
         })
         ->andReturn($uploadResponse);
 
@@ -147,6 +165,44 @@ it('routes generateVariations with input_image to the multipart variations endpo
     ]);
 
     expect($decoded['data'])->toHaveCount(2);
+
+    expect($upload['fields'])->toBe(['image', 'n', 'size'])
+        ->and($upload['n'])->toBe('4')
+        ->and($upload['size'])->toBe('1024x1024')
+        ->and($upload['is_stream'])->toBeTrue()
+        ->and($upload['filename'])->toBe('input.png')
+        ->and($upload['bytes'])->toBe('PNGDATA');
+});
+
+it('sends the variations upload as a body Symfony turns into multipart/form-data', function () {
+    $uploadResponse = M::mock(ResponseInterface::class);
+    $uploadResponse->shouldReceive('getStatusCode')->once()->andReturn(200);
+    $uploadResponse->shouldReceive('getContent')->once()->with(false)->andReturn(json_encode([
+        'data' => [['b64_json' => base64_encode('x')]],
+    ]));
+
+    $options = null;
+
+    $http = M::mock(HttpClientInterface::class);
+    $http->shouldReceive('request')
+        ->once()
+        ->withArgs(function (string $method, string $url, array $requestOptions) use (&$options): bool {
+            $options = $requestOptions;
+            return true;
+        })
+        ->andReturn($uploadResponse);
+
+    imageHttpClient($http)->generateVariations([
+        'input_image' => 'data:image/png;base64,' . base64_encode('PNGBYTES'),
+        'n' => 2,
+    ]);
+
+    // Symfony's HttpClient has no `multipart` option — it rejects the
+    // request outright. The image part has to be a stream inside `body`,
+    // which is what flips the content type to multipart/form-data.
+    expect($options)->not->toHaveKey('multipart')
+        ->and($options['body'])->toBeArray()
+        ->and($options['body']['image'])->toBeResource();
 });
 
 it('decodes data: URIs as input_image without making an HTTP request', function () {
@@ -156,13 +212,15 @@ it('decodes data: URIs as input_image without making an HTTP request', function 
         'data' => [['b64_json' => base64_encode('x')]],
     ]));
 
+    $upload = null;
+
     $http = M::mock(HttpClientInterface::class);
     $http->shouldReceive('request')
         ->once()
-        ->withArgs(function (string $method, string $url, array $options): bool {
+        ->withArgs(function (string $method, string $url, array $options) use (&$upload): bool {
+            $upload = imageUploadSnapshot($options);
             return $method === 'POST'
-                && $url === HTTP_CLIENT_TEST_BASE_URL . '/images/variations'
-                && $options['multipart'][0]['contents'] === 'PNGBYTES';
+                && $url === HTTP_CLIENT_TEST_BASE_URL . '/images/variations';
         })
         ->andReturn($uploadResponse);
     $http->shouldNotReceive('request'); // no GET — the data: URI is local
@@ -172,6 +230,7 @@ it('decodes data: URIs as input_image without making an HTTP request', function 
         'n' => 2,
     ]);
     expect($decoded['data'])->toHaveCount(1);
+    expect($upload['bytes'])->toBe('PNGBYTES');
 });
 
 it('rejects an unrecognised input_image scheme', function () {
