@@ -170,7 +170,7 @@ it('routes generateVariations with input_image to the multipart variations endpo
         ->and($upload['n'])->toBe('4')
         ->and($upload['size'])->toBe('1024x1024')
         ->and($upload['is_stream'])->toBeTrue()
-        ->and($upload['filename'])->toBe('input.png')
+        ->and($upload['filename'])->toEndWith('.png')
         ->and($upload['bytes'])->toBe('PNGDATA');
 });
 

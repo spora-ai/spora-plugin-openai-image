@@ -17,6 +17,12 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  */
 final class OpenAIImageHttpClient
 {
+    /**
+     * The one message for a failed staging, so the throw sites and the
+     * operator-facing text stay in step.
+     */
+    private const STAGE_FAILED = 'Failed to stage the input image for upload.';
+
     public function __construct(
         private readonly HttpClientInterface $httpClient,
         private readonly string $apiKey,
@@ -134,37 +140,27 @@ final class OpenAIImageHttpClient
      * Stage the image bytes in a temp file and open them as a stream.
      *
      * Symfony takes the multipart filename from the basename of the stream's
-     * path, so the bytes go into a temp directory under the name `input.png`
-     * — the name and the `.png` extension the upstream variations endpoint
-     * expects for the image part.
+     * path and its content type from the file extension, so the staged file
+     * carries the `.png` extension the upstream variations endpoint expects.
      *
-     * @return array{stream: resource, path: string, dir: string}
+     * @return array{stream: resource, path: string}
      */
     private function stageImage(string $bytes): array
     {
-        $dir = sys_get_temp_dir() . '/spora_openai_image_' . bin2hex(random_bytes(8));
-        if (!mkdir($dir, 0700)) {
-            throw new OpenAIImageException('Failed to stage the input image for upload.', $this->timeoutSeconds);
-        }
+        $path = sys_get_temp_dir() . '/spora_openai_image_' . bin2hex(random_bytes(8)) . '.png';
 
-        $path = $dir . '/input.png';
-        if (file_put_contents($path, $bytes) === false) {
-            @rmdir($dir);
-            throw new OpenAIImageException('Failed to stage the input image for upload.', $this->timeoutSeconds);
-        }
-
-        $stream = fopen($path, 'rb');
+        $written = @file_put_contents($path, $bytes);
+        $stream = $written === strlen($bytes) ? fopen($path, 'rb') : false;
         if ($stream === false) {
             @unlink($path);
-            @rmdir($dir);
-            throw new OpenAIImageException('Failed to stage the input image for upload.', $this->timeoutSeconds);
+            throw new OpenAIImageException(self::STAGE_FAILED, $this->timeoutSeconds);
         }
 
-        return ['stream' => $stream, 'path' => $path, 'dir' => $dir];
+        return ['stream' => $stream, 'path' => $path];
     }
 
     /**
-     * @param array{stream: resource, path: string, dir: string} $image
+     * @param array{stream: resource, path: string} $image
      */
     private function discardStagedImage(array $image): void
     {
@@ -172,7 +168,6 @@ final class OpenAIImageHttpClient
             fclose($image['stream']);
         }
         @unlink($image['path']);
-        @rmdir($image['dir']);
     }
 
     /**
