@@ -14,7 +14,7 @@ allowed-tools: image_openai
 Two operations:
 
 - `generate` — single image, no approval. The default for "give me an image of X".
-- `generate_variations` — multiple images (3 by default, up to 8), or semantic variations of an existing image. Approval-gated by default — the LLM must ask the operator before issuing this call.
+- `generate_variations` — one or more images (1 to 8, 3 by default), or semantic variations of an existing image. Approval-gated by default — the LLM must ask the operator before issuing this call.
 
 The tool calls the configured OpenAI-compatible endpoints and stores returned images in the Media Archive when available.
 
@@ -38,7 +38,7 @@ openai_image_openai(action: "generate", prompt: "subject + style + composition +
 
 When the desired surface is ambiguous, ask whether the user wants square, landscape, or portrait output before choosing `size`.
 
-### `generate_variations` — multiple images or input-image variations
+### `generate_variations` — one or more images, or input-image variations
 
 Approval-gated by default: the LLM must ask the operator before issuing this call. Useful when the user wants to see options, or when refining an existing image.
 
@@ -59,7 +59,7 @@ openai_image_openai(action: "generate_variations", input_image: "https://cdn.exa
 |---|---:|---|---|
 | `prompt` | One of | — | Required when `input_image` is absent. Ignored on image-based variations. |
 | `input_image` | One of | — | Source image. Accepts an http(s) URL, a `data:` URI, a 36-char Media Archive UUID, or an opaque `/api/v1/assets/<uuid>.<ext>` URL. When supplied, switches to `/v1/images/variations`. |
-| `n` | No | `3` | Number of variations. Minimum 2, maximum 8. The upstream API charges per image. |
+| `n` | No | `3` | Number of variations. Minimum 1, maximum 8. The upstream API charges per image. |
 | `size` | No | `auto` | Same options as `generate`. |
 | `quality` | No | `auto` | Ignored on image-based variations. |
 | `background` | No | `auto` | Ignored on image-based variations. |

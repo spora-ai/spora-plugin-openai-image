@@ -145,7 +145,7 @@ it('rejects a variations call that has neither a prompt nor an input image', fun
         ->and($result->content)->toContain('requires either `prompt` or `input_image`');
 });
 
-it('clamps the variations count to the 2-8 range and defaults to 3 for a non-numeric value', function (mixed $given, int $expected) {
+it('clamps the variations count to the 1-8 range and defaults to 3 for a non-numeric value', function (mixed $given, int $expected) {
     $requests = [];
     $http = genHttpRecording($requests, ['data' => [['b64_json' => GEN_TOOL_PNG_BASE64]]]);
 
@@ -160,9 +160,11 @@ it('clamps the variations count to the 2-8 range and defaults to 3 for a non-num
 })->with([
     'non-numeric falls back to the default' => ['many', 3],
     'absent falls back to the default'      => [null, 3],
-    'below the minimum is raised'           => [1, 2],
+    'zero is raised to the minimum'         => [0, 1],
+    'a negative count is raised to the minimum' => [-5, 1],
     'above the maximum is lowered'          => [99, 8],
     'in range is forwarded as-is'           => [5, 5],
+    'a single variation is forwarded as-is' => [1, 1],
 ]);
 
 it('sends prompt-based variations to the generations endpoint with the resolved model', function () {

@@ -21,20 +21,20 @@ use Throwable;
 
 #[Tool(
     name: 'image_openai',
-    description: 'Generate images from a text prompt using an OpenAI-compatible image API. Two operations: `generate` (single image, no approval) and `generate_variations` (multiple images or semantic variations of an input image, approval-gated by default).',
+    description: 'Generate images from a text prompt using an OpenAI-compatible image API. Two operations: `generate` (single image, no approval) and `generate_variations` (one or more images, or semantic variations of an input image, approval-gated by default).',
     displayName: 'OpenAI Image',
     category: 'generation',
     icon: 'image',
 )]
-#[ToolOperation(name: 'generate', description: 'Generate a single image from a text prompt. Always one image — use `generate_variations` for multiple.', enabledByDefault: true, requiresApprovalByDefault: false)]
-#[ToolOperation(name: 'generate_variations', description: 'Generate a small set of variations (3 by default, up to 8) from a prompt, or produce semantic variations of an existing image when `input_image` is supplied. Approval-gated by default — the LLM must ask the operator before issuing this call.', enabledByDefault: true, requiresApprovalByDefault: true)]
+#[ToolOperation(name: 'generate', description: 'Generate a single image from a text prompt. Always one image — use `generate_variations` for variations of a prompt or of an input image.', enabledByDefault: true, requiresApprovalByDefault: false)]
+#[ToolOperation(name: 'generate_variations', description: 'Generate variations (1 to 8, 3 by default) from a prompt, or produce semantic variations of an existing image when `input_image` is supplied. Approval-gated by default — the LLM must ask the operator before issuing this call.', enabledByDefault: true, requiresApprovalByDefault: true)]
 #[ToolSetting(key: 'api_key', label: 'API Key', type: 'password', description: 'API key for the configured image API.', required: true)]
 #[ToolSetting(key: 'base_url', label: 'API URL', type: 'text', description: 'OpenAI-compatible API base URL. The images endpoint is appended automatically.', default: 'https://api.openai.com/v1')]
 #[ToolSetting(key: 'model', label: 'Model', type: 'text', description: 'Image model identifier.', default: 'gpt-image-2')]
 #[ToolSetting(key: 'http_timeout_seconds', label: 'HTTP timeout (s)', type: 'number', description: 'Per-request timeout. Default 600 seconds. Lower if you only need single-image drafts; raise above 600 if `generate_variations(n: 8)` at high quality still hits the idle timeout.', default: '600')]
 #[ToolParameter(name: 'prompt', type: 'string', description: 'The text prompt describing the image to generate. Required for `generate`. For `generate_variations`, required unless `input_image` is supplied.', required: ['generate'], maximum: 32000)]
 #[ToolParameter(name: 'input_image', type: 'string', description: 'Source image for image-based variations. Accepts an http(s) URL, a `data:` URI, a 36-char Media Archive UUID, or an opaque `/api/v1/assets/<uuid>.<ext>` URL. When supplied, `generate_variations` POSTs to `/v1/images/variations` (multipart upload) instead of `/v1/images/generations` — useful for semantic variations of an existing image. Only meaningful for `generate_variations`.', required: false, maximum: 4096)]
-#[ToolParameter(name: 'n', type: 'integer', description: 'Number of variation images to produce. Only applied by `generate_variations`. Default 3, minimum 2, maximum 8. The upstream API charges per image produced.', required: false, minimum: 2, maximum: 8, default: 3)]
+#[ToolParameter(name: 'n', type: 'integer', description: 'Number of variation images to produce. Only applied by `generate_variations`. Default 3, minimum 1, maximum 8. The upstream API charges per image produced.', required: false, minimum: 1, maximum: 8, default: 3)]
 #[ToolParameter(name: 'size', type: 'string', description: 'Generated image dimensions.', required: false, enum: ['auto', '1024x1024', '1536x1024', '1024x1536'], default: 'auto')]
 #[ToolParameter(name: 'quality', type: 'string', description: 'Image quality. Ignored by `generate_variations` when `input_image` is supplied (the upstream variations endpoint does not support it).', required: false, enum: ['auto', 'low', 'medium', 'high'], default: 'auto')]
 #[ToolParameter(name: 'background', type: 'string', description: 'Background mode. Ignored by `generate_variations` when `input_image` is supplied (the upstream variations endpoint does not support it).', required: false, enum: ['auto', 'opaque', 'transparent'], default: 'auto')]
@@ -43,7 +43,7 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
 {
     private const DEFAULT_N = 3;
     private const MAX_N = 8;
-    private const MIN_N = 2;
+    private const MIN_N = 1;
 
     private ?OpenAIImageMediaArchiveResolver $mediaArchiveResolver = null;
 

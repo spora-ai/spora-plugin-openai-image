@@ -47,7 +47,7 @@ it('keeps n / input_image at required: false with sensible defaults', function (
     $n = imageToolParameterArgs('n');
     expect($n['required'])->toBeFalse();
     expect($n['default'])->toBe(3);
-    expect($n['minimum'])->toBe(2);
+    expect($n['minimum'])->toBe(1);
     expect($n['maximum'])->toBe(8);
 
     $inputImage = imageToolParameterArgs('input_image');
