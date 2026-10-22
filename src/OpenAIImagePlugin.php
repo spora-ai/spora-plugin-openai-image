@@ -15,11 +15,9 @@ use Spora\Services\MediaArchive\MediaAssetReader;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
- * Subscribes to {@see ContainerBuildingEvent} for the three DI bindings
- * php-di cannot autowire: the HTTP client, the media-archive resolver
- * (wraps {@see MediaAssetReader} as a closure so the plugin does not
- * couple to the host's `final` reader), and the generation tool's
- * method-injected dependencies.
+ * Binds what php-di cannot infer. The media-archive resolver wraps
+ * {@see MediaAssetReader} as a closure so the plugin does not couple to the
+ * host's `final` reader.
  */
 final class OpenAIImagePlugin extends AbstractPlugin implements EventSubscriberInterface
 {
@@ -44,6 +42,18 @@ final class OpenAIImagePlugin extends AbstractPlugin implements EventSubscriberI
         return [__DIR__ . '/../agent-templates'];
     }
 
+    /**
+     * The plugin's `locales/` directory — one `<lang>.json` per language.
+     *
+     * @return string[]
+     */
+    public function translationsPaths(): array
+    {
+        return [
+            __DIR__ . '/../locales',
+        ];
+    }
+
     public static function getSubscribedEvents(): array
     {
         return [
@@ -57,10 +67,8 @@ final class OpenAIImagePlugin extends AbstractPlugin implements EventSubscriberI
     }
 
     /**
-     * Bindings registered with PHP-DI's {@see \DI\ContainerBuilder} by
-     * {@see onContainerBuilding()}. Extracted as a public method so the
-     * plugin tests can assert against the registered contract without
-     * reflecting on the builder's private state.
+     * The bindings {@see onContainerBuilding()} registers. A public method so
+     * the tests can assert the contract without reflecting on the builder.
      *
      * @return array<string, mixed>
      */

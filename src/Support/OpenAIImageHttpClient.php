@@ -11,9 +11,9 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  * Thin, authenticated wrapper over Symfony's HttpClient for the OpenAI-compatible
  * image endpoints.
  *
- * Single-shot: every failure surfaces to the caller so the LLM can adapt on retry
- * (lower quality, smaller size, raise `http_timeout_seconds`). An internal retry
- * loop on timeouts would just re-hit the same per-request cap and waste quota.
+ * Single-shot: every failure surfaces to the caller so the LLM can adapt on
+ * retry (lower quality, smaller size, raise `http_timeout_seconds`). An
+ * internal retry loop would re-hit the same per-request cap and waste quota.
  */
 final class OpenAIImageHttpClient
 {
@@ -25,9 +25,7 @@ final class OpenAIImageHttpClient
     ) {}
 
     /**
-     * POST /v1/images/generations — text-to-image. Always produces one image
-     * per call (the LLM-facing schema does not expose `n` here; multi-image
-     * work goes through {@see self::generateVariations()}).
+     * POST /v1/images/generations — text-to-image.
      *
      * @param array<string, mixed> $body
      * @return array<string, mixed>
@@ -40,8 +38,8 @@ final class OpenAIImageHttpClient
 
     /**
      * POST /v1/images/generations (prompt-based) or /v1/images/variations
-     * (image-based, multipart upload). The `input_image` key is the switch:
-     * absent → JSON generation; present → multipart upload to the variations endpoint.
+     * (image-based, multipart upload). `input_image` is the switch: absent →
+     * JSON generation, present → multipart upload to the variations endpoint.
      *
      * @param array<string, mixed> $body Must include `n` (defaults are applied upstream).
      * @return array<string, mixed>
@@ -126,14 +124,11 @@ final class OpenAIImageHttpClient
     }
 
     /**
-     * Resolve an `input_image` reference to raw bytes. Accepts:
-     *   - http(s)://... — fetches the URL via the injected HttpClient.
-     *   - data:image/...;base64,... — decodes the base64 payload.
+     * Resolve an `input_image` reference to raw bytes: an http(s) URL is
+     * fetched via the injected HttpClient, a `data:` URI is base64-decoded.
      *
-     * Media Archive references (UUIDs and `/api/v1/assets/<token>.<ext>` URLs)
-     * are resolved to one of the above shapes upstream by
-     * {@see OpenAIImageMediaArchiveResolver}
-     * before this method is called.
+     * Media Archive references are resolved to one of those two shapes
+     * upstream, by {@see OpenAIImageMediaArchiveResolver}.
      */
     private function fetchImage(string $inputImage): string
     {
@@ -205,9 +200,8 @@ final class OpenAIImageHttpClient
 }
 
 /**
- * Internal value object for the response triplet (status, raw body, decoded JSON).
- * Keeps the postJson / postMultipart → decodeResponse handshake simple without
- * leaking ResponseInterface into the decode path.
+ * The response triplet (status, raw body, decoded JSON). Carries the values
+ * the decode path needs without handing it Symfony's `ResponseInterface`.
  *
  * @internal
  */
