@@ -258,17 +258,13 @@ final class OpenAIImageHttpClient
      * carries it — a JPEG staged as `.png` goes up as `image/png` and is
      * rejected.
      *
-     * Anything else is staged as PNG: what the plugin's own media archive
-     * holds, and what the upstream rejects with the clearest message.
+     * PNG is the fallback, which is what the plugin's own media archive
+     * holds; the upstream then rejects a format it cannot read.
      *
      * @return array{extension: string, mime: string}
      */
     private static function imageFormat(string $bytes): array
     {
-        if (str_starts_with($bytes, "\x89PNG\r\n\x1a\n")) {
-            return ['extension' => 'png', 'mime' => 'image/png'];
-        }
-
         if (str_starts_with($bytes, "\xFF\xD8\xFF")) {
             return ['extension' => 'jpg', 'mime' => 'image/jpeg'];
         }
