@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Mockery as M;
 use Psr\Log\LoggerInterface;
+use Spora\Plugins\OpenAIImage\Support\OpenAIImageHttpClient;
 use Spora\Plugins\OpenAIImage\Support\OpenAIImageMediaArchiveResolver;
 use Spora\Plugins\OpenAIImage\Tests\Support\InMemoryMediaArchive;
 use Spora\Plugins\OpenAIImage\Tools\OpenAIImageGenerationTool;
@@ -187,7 +188,7 @@ it('sends prompt-based variations to the generations endpoint with the resolved 
     ]);
 });
 
-it('uploads the input image to the variations endpoint instead of sending a model or prompt', function () {
+it('uploads the input image to the edits endpoint with the model and the prompt', function () {
     $requests = [];
     $http = genHttpRecording($requests, ['data' => [['b64_json' => GEN_TOOL_PNG_BASE64]]]);
 
@@ -202,11 +203,34 @@ it('uploads the input image to the variations endpoint instead of sending a mode
 
     $upload = array_values(array_filter($requests, static fn(array $r): bool => $r['method'] === 'POST'));
     expect($upload)->toHaveCount(1)
-        ->and($upload[0]['url'])->toBe(GEN_TOOL_BASE_URL . '/images/variations');
+        ->and($upload[0]['url'])->toBe(GEN_TOOL_BASE_URL . '/images/edits');
 
-    $fields = array_keys((array) ($upload[0]['options']['body'] ?? []));
-    expect($fields)->not->toContain('prompt')
-        ->and($fields)->not->toContain('model');
+    // /v1/images/edits requires the model and reads the prompt as the change
+    // to make to the source image.
+    $fields = (array) ($upload[0]['options']['body'] ?? []);
+    expect($fields)->toHaveKey('model')
+        ->and($fields['model'])->toBe('gpt-image-2')
+        ->and($fields)->toHaveKey('prompt')
+        ->and($fields['prompt'])->toBe('A lighthouse');
+});
+
+it('sends the default variation prompt when only an input image is given', function () {
+    $requests = [];
+    $http = genHttpRecording($requests, ['data' => [['b64_json' => GEN_TOOL_PNG_BASE64]]]);
+
+    $result = genTool($http)->execute([
+        'action'      => 'generate_variations',
+        'input_image' => 'data:image/png;base64,' . GEN_TOOL_PNG_BASE64,
+        'n'           => 2,
+    ], agentId: 1);
+
+    expect($result->success)->toBeTrue();
+
+    $upload = array_values(array_filter($requests, static fn(array $r): bool => $r['method'] === 'POST'));
+    $fields = (array) ($upload[0]['options']['body'] ?? []);
+
+    expect($fields['prompt'])->toBe(OpenAIImageHttpClient::DEFAULT_VARIATION_PROMPT)
+        ->and($result->data['prompt'])->toBe(OpenAIImageHttpClient::DEFAULT_VARIATION_PROMPT);
 });
 
 it('forwards size, quality and background only when they differ from auto', function () {

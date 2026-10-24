@@ -32,12 +32,12 @@ use Throwable;
 #[ToolSetting(key: 'base_url', label: 'API URL', type: 'text', description: 'OpenAI-compatible API base URL. The images endpoint is appended automatically.', default: 'https://api.openai.com/v1')]
 #[ToolSetting(key: 'model', label: 'Model', type: 'text', description: 'Image model identifier.', default: 'gpt-image-2')]
 #[ToolSetting(key: 'http_timeout_seconds', label: 'HTTP timeout (s)', type: 'number', description: 'Per-request timeout. Default 600 seconds. Lower if you only need single-image drafts; raise above 600 if `generate_variations(n: 8)` at high quality still hits the idle timeout.', default: '600')]
-#[ToolParameter(name: 'prompt', type: 'string', description: 'The text prompt describing the image to generate. Required for `generate`. For `generate_variations`, required unless `input_image` is supplied.', required: ['generate'], maximum: 32000)]
-#[ToolParameter(name: 'input_image', type: 'string', description: 'Source image for image-based variations. Accepts an http(s) URL, a `data:` URI, a 36-char Media Archive UUID, or an opaque `/api/v1/assets/<uuid>.<ext>` URL. When supplied, `generate_variations` POSTs to `/v1/images/variations` (multipart upload) instead of `/v1/images/generations` — useful for semantic variations of an existing image. Only meaningful for `generate_variations`.', required: false, maximum: 4096)]
+#[ToolParameter(name: 'prompt', type: 'string', description: 'The text prompt describing the image to generate. Required for `generate`. For `generate_variations`, required unless `input_image` is supplied; with an `input_image` it describes the change to make to that image.', required: ['generate'], maximum: 32000)]
+#[ToolParameter(name: 'input_image', type: 'string', description: 'Source image for image-based variations. Accepts an http(s) URL, a `data:` URI, a 36-char Media Archive UUID, or an opaque `/api/v1/assets/<uuid>.<ext>` URL. When supplied, `generate_variations` POSTs to `/v1/images/edits` (multipart upload) instead of `/v1/images/generations` — useful for semantic variations of an existing image. Only meaningful for `generate_variations`.', required: false, maximum: 4096)]
 #[ToolParameter(name: 'n', type: 'integer', description: 'Number of variation images to produce. Only applied by `generate_variations`. Default 3, minimum 1, maximum 8. The upstream API charges per image produced.', required: false, minimum: 1, maximum: 8, default: 3)]
 #[ToolParameter(name: 'size', type: 'string', description: 'Generated image dimensions.', required: false, enum: ['auto', '1024x1024', '1536x1024', '1024x1536'], default: 'auto')]
-#[ToolParameter(name: 'quality', type: 'string', description: 'Image quality. Ignored by `generate_variations` when `input_image` is supplied (the upstream variations endpoint does not support it).', required: false, enum: ['auto', 'low', 'medium', 'high'], default: 'auto')]
-#[ToolParameter(name: 'background', type: 'string', description: 'Background mode. Ignored by `generate_variations` when `input_image` is supplied (the upstream variations endpoint does not support it).', required: false, enum: ['auto', 'opaque', 'transparent'], default: 'auto')]
+#[ToolParameter(name: 'quality', type: 'string', description: 'Image quality. Applies to image-based variations too, unless the provider still serves only the retired `/v1/images/variations` endpoint.', required: false, enum: ['auto', 'low', 'medium', 'high'], default: 'auto')]
+#[ToolParameter(name: 'background', type: 'string', description: 'Background mode. Applies to image-based variations too, unless the provider still serves only the retired `/v1/images/variations` endpoint.', required: false, enum: ['auto', 'opaque', 'transparent'], default: 'auto')]
 #[ToolParameter(name: 'filename', type: 'string', description: 'Optional human-readable filename stem without an extension. The correct file extension is appended automatically. For variations, a `-1`, `-2`, … suffix is added per image.', required: false, maximum: 120)]
 final class OpenAIImageGenerationTool extends OpenAIImageTool
 {
@@ -156,19 +156,22 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
 
         $n = $this->clampN($arguments['n'] ?? self::DEFAULT_N);
 
-        return $this->run($arguments, $agentId, $ownerId, function (OpenAIImageHttpClient $client, string $model) use ($arguments, $prompt, $inputImage, $n, $agentId, $runnerId): ToolResult {
+        // /v1/images/edits requires a prompt and reads it as the change to
+        // make to the source image, so a call that named only the image gets
+        // one spelled out for it.
+        $effectivePrompt = $prompt !== '' ? $prompt : OpenAIImageHttpClient::DEFAULT_VARIATION_PROMPT;
+
+        return $this->run($arguments, $agentId, $ownerId, function (OpenAIImageHttpClient $client, string $model) use ($arguments, $prompt, $effectivePrompt, $inputImage, $n, $agentId, $runnerId): ToolResult {
             $body = ['n' => $n];
             $this->appendOptionalFields($body, $arguments);
-            if ($inputImage === '') {
-                $body['model'] = $model;
-                $body['prompt'] = $prompt;
-            } else {
-                // /v1/images/variations ignores model / quality / background upstream.
+            $body['model'] = $model;
+            $body['prompt'] = $inputImage === '' ? $prompt : $effectivePrompt;
+            if ($inputImage !== '') {
                 $body['input_image'] = $inputImage;
             }
 
             $response = $client->generateVariations($body);
-            return $this->renderResponse($response, $prompt !== '' ? $prompt : 'variations of input image', $arguments, $agentId, $runnerId, $model, $n);
+            return $this->renderResponse($response, $effectivePrompt, $arguments, $agentId, $runnerId, $model, $n);
         });
     }
 
@@ -247,7 +250,8 @@ final class OpenAIImageGenerationTool extends OpenAIImageTool
      * `ToolResult.data.prompt` for callers that need it.
      *
      * There is no empty case: `generate()` rejects a blank prompt, and
-     * `generateVariations()` substitutes a literal before rendering.
+     * `generateVariations()` substitutes the default variation prompt before
+     * rendering.
      */
     private function summarizePrompt(string $prompt): string
     {

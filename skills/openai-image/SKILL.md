@@ -45,7 +45,7 @@ Approval-gated by default: the LLM must ask the operator before issuing this cal
 Two modes, selected by `input_image`:
 
 - **Prompt-based** (default, `input_image` omitted): calls `POST /v1/images/generations` with `n` independent samples from the same prompt.
-- **Image-based** (`input_image` supplied): calls `POST /v1/images/variations` (multipart upload) to produce semantic variations of an existing image. The upstream `/v1/images/variations` endpoint does not accept `prompt`, `quality`, or `background` — only `n` and `size` are forwarded. Accepted `input_image` shapes: http(s) URL, `data:` URI, Media Archive UUID (`/api/v1/assets/<uuid>.<ext>`). The plugin resolves the Media Archive reference server-side (the LLM never sees the bytes), then multipart-uploads to the upstream endpoint.
+- **Image-based** (`input_image` supplied): calls `POST /v1/images/edits` (multipart upload) to produce semantic variations of an existing image. The prompt is the change to make to that image — describe it, or the plugin sends a neutral "create a variation" prompt. Accepted `input_image` shapes: http(s) URL, `data:` URI, Media Archive UUID (`/api/v1/assets/<uuid>.<ext>`). The plugin resolves the Media Archive reference server-side (the LLM never sees the bytes), then multipart-uploads to the upstream endpoint.
 
 ```text
 openai_image_openai(action: "generate_variations", prompt: "subject + style", n: 3, size: "1024x1024", filename: "options")
@@ -57,12 +57,12 @@ openai_image_openai(action: "generate_variations", input_image: "https://cdn.exa
 
 | Parameter | Required | Default | Notes |
 |---|---:|---|---|
-| `prompt` | One of | — | Required when `input_image` is absent. Ignored on image-based variations. |
-| `input_image` | One of | — | Source image. Accepts an http(s) URL, a `data:` URI, a 36-char Media Archive UUID, or an opaque `/api/v1/assets/<uuid>.<ext>` URL. When supplied, switches to `/v1/images/variations`. |
+| `prompt` | One of | — | Required when `input_image` is absent. On image-based variations it describes the change to make to that image. |
+| `input_image` | One of | — | Source image. Accepts an http(s) URL, a `data:` URI, a 36-char Media Archive UUID, or an opaque `/api/v1/assets/<uuid>.<ext>` URL. When supplied, switches to `/v1/images/edits`. |
 | `n` | No | `3` | Number of variations. Minimum 1, maximum 8. The upstream API charges per image. |
 | `size` | No | `auto` | Same options as `generate`. |
-| `quality` | No | `auto` | Ignored on image-based variations. |
-| `background` | No | `auto` | Ignored on image-based variations. |
+| `quality` | No | `auto` | Applies to image-based variations too, unless the provider still serves only the retired `/v1/images/variations` endpoint. |
+| `background` | No | `auto` | Applies to image-based variations too, unless the provider still serves only the retired `/v1/images/variations` endpoint. |
 | `filename` | No | auto | Stem; a `-1`, `-2`, … suffix is added per image. |
 
 ## Settings
@@ -70,7 +70,7 @@ openai_image_openai(action: "generate_variations", input_image: "https://cdn.exa
 | Setting | Default | Notes |
 |---|---|---|
 | `api_key` | required | API key for OpenAI or the compatible provider. |
-| `base_url` | `https://api.openai.com/v1` | API base URL; `/images/generations` and `/images/variations` are appended automatically. |
+| `base_url` | `https://api.openai.com/v1` | API base URL; `/images/generations` and `/images/edits` are appended automatically. |
 | `model` | `gpt-image-2` | Image model identifier supported by the configured provider. |
 | `http_timeout_seconds` | `600` | Per-request timeout. The default is generous to cover `generate_variations(n: 8)` at high quality on slow networks. Lower it for single-image drafts where you want fast failure; raise it above 600 if the upstream still hits the idle timeout. |
 
@@ -88,5 +88,6 @@ If Media Archive is unavailable or ingestion fails, the tool returns a data URL 
 - If the API returns no image data, report the failure and do not claim an image was generated.
 - On a timeout error, the message includes the current `http_timeout_seconds` value — either retry with a smaller `size` or `quality: low`, or ask the operator to raise the timeout.
 - On `HTTP 429` (rate limited), wait or reduce `n` before retrying.
+- On `HTTP 404` the message names the endpoint that answered it. The provider does not serve that endpoint, or `base_url` points at the wrong place — report it, a retry will not help.
 - **Do not retry a successful generation** — additional images consume provider quota.
 - The internal retry loop is intentionally absent; the LLM is the right place to decide whether to retry and how.

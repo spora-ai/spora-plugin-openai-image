@@ -15,6 +15,14 @@ const HTTP_CLIENT_TEST_MODEL     = 'gpt-image-1';
 const HTTP_CLIENT_TEST_TIMEOUT_S = 30;
 
 /**
+ * A 1x1 JPEG, base64-encoded. The plugin stages the upload under the
+ * extension of the format the bytes really are, so the test needs bytes of
+ * a format other than PNG — and CI runs without GD, so they are inlined
+ * rather than rendered.
+ */
+const HTTP_CLIENT_TEST_JPEG = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==';
+
+/**
  * Build a client pointed at the test base URL/api key.
  * Per-op signatures vary — pull the less-common fields out via the $args spread.
  */
@@ -29,7 +37,7 @@ function imageHttpClient(HttpClientInterface $http, int $timeout = HTTP_CLIENT_T
  * closed with it.
  *
  * @param array<string, mixed> $options
- * @return array{fields: list<string>, n: mixed, size: mixed, filename: string, bytes: string, is_stream: bool}
+ * @return array{fields: list<string>, n: mixed, size: mixed, model: mixed, prompt: mixed, quality: mixed, background: mixed, filename: string, bytes: string, is_stream: bool}
  */
 function imageUploadSnapshot(array $options): array
 {
@@ -38,12 +46,16 @@ function imageUploadSnapshot(array $options): array
     $path = is_resource($stream) ? (string) stream_get_meta_data($stream)['uri'] : '';
 
     return [
-        'fields'    => array_keys($body),
-        'n'         => $body['n'] ?? null,
-        'size'      => $body['size'] ?? null,
-        'filename'  => $path === '' ? '' : basename($path),
-        'bytes'     => $path === '' ? '' : (string) file_get_contents($path),
-        'is_stream' => is_resource($stream),
+        'fields'     => array_keys($body),
+        'n'          => $body['n'] ?? null,
+        'size'       => $body['size'] ?? null,
+        'model'      => $body['model'] ?? null,
+        'prompt'     => $body['prompt'] ?? null,
+        'quality'    => $body['quality'] ?? null,
+        'background' => $body['background'] ?? null,
+        'filename'   => $path === '' ? '' : basename($path),
+        'bytes'      => $path === '' ? '' : (string) file_get_contents($path),
+        'is_stream'  => is_resource($stream),
     ];
 }
 
@@ -123,7 +135,7 @@ it('routes generateVariations without input_image to the generations endpoint', 
     expect($decoded['data'])->toHaveCount(3);
 });
 
-it('routes generateVariations with input_image to the multipart variations endpoint', function () {
+it('routes generateVariations with input_image to the multipart edits endpoint', function () {
     $uploadResponse = M::mock(ResponseInterface::class);
     $uploadResponse->shouldReceive('getStatusCode')->once()->andReturn(200);
     $uploadResponse->shouldReceive('getContent')->once()->with(false)->andReturn(json_encode([
@@ -149,32 +161,35 @@ it('routes generateVariations with input_image to the multipart variations endpo
         ->withArgs(function (string $method, string $url, array $options) use (&$upload): bool {
             $upload = imageUploadSnapshot($options);
             return $method === 'POST'
-                && $url === HTTP_CLIENT_TEST_BASE_URL . '/images/variations';
+                && $url === HTTP_CLIENT_TEST_BASE_URL . '/images/edits';
         })
         ->andReturn($uploadResponse);
 
     $decoded = imageHttpClient($http)->generateVariations([
         'input_image' => 'https://example.com/seed.png',
+        'model' => HTTP_CLIENT_TEST_MODEL,
+        'prompt' => 'make it winter',
         'n' => 4,
         'size' => '1024x1024',
-        // The upstream variations endpoint does not accept these — they must be
-        // stripped from the multipart body, not just ignored.
-        'prompt' => 'never sent',
         'quality' => 'high',
         'background' => 'transparent',
     ]);
 
     expect($decoded['data'])->toHaveCount(2);
 
-    expect($upload['fields'])->toBe(['image', 'n', 'size'])
+    expect($upload['fields'])->toBe(['image', 'model', 'prompt', 'n', 'size', 'quality', 'background'])
+        ->and($upload['model'])->toBe(HTTP_CLIENT_TEST_MODEL)
+        ->and($upload['prompt'])->toBe('make it winter')
         ->and($upload['n'])->toBe('4')
         ->and($upload['size'])->toBe('1024x1024')
+        ->and($upload['quality'])->toBe('high')
+        ->and($upload['background'])->toBe('transparent')
         ->and($upload['is_stream'])->toBeTrue()
         ->and($upload['filename'])->toEndWith('.png')
         ->and($upload['bytes'])->toBe('PNGDATA');
 });
 
-it('sends the variations upload as a body Symfony turns into multipart/form-data', function () {
+it('sends the edits upload as a body Symfony turns into multipart/form-data', function () {
     $uploadResponse = M::mock(ResponseInterface::class);
     $uploadResponse->shouldReceive('getStatusCode')->once()->andReturn(200);
     $uploadResponse->shouldReceive('getContent')->once()->with(false)->andReturn(json_encode([
@@ -205,6 +220,105 @@ it('sends the variations upload as a body Symfony turns into multipart/form-data
         ->and($options['body']['image'])->toBeResource();
 });
 
+it('falls back to the retired variations endpoint when the provider has no edits endpoint', function () {
+    $notFound = M::mock(ResponseInterface::class);
+    $notFound->shouldReceive('getStatusCode')->once()->andReturn(404);
+    $notFound->shouldReceive('getContent')->once()->with(false)->andReturn('');
+
+    $legacyResponse = M::mock(ResponseInterface::class);
+    $legacyResponse->shouldReceive('getStatusCode')->once()->andReturn(200);
+    $legacyResponse->shouldReceive('getContent')->once()->with(false)->andReturn(json_encode([
+        'data' => [['b64_json' => base64_encode('a')]],
+    ]));
+
+    $uploads = [];
+    $positions = [];
+
+    $http = M::mock(HttpClientInterface::class);
+    $http->shouldReceive('request')
+        ->once()
+        ->withArgs(function (string $method, string $url, array $options) use (&$uploads, &$positions): bool {
+            $uploads[$url] = imageUploadSnapshot($options);
+            // Symfony drains the part's stream while it builds the body.
+            stream_get_contents($options['body']['image']);
+            $positions['edits'] = ftell($options['body']['image']);
+            return $url === HTTP_CLIENT_TEST_BASE_URL . '/images/edits';
+        })
+        ->andReturn($notFound);
+    $http->shouldReceive('request')
+        ->once()
+        ->withArgs(function (string $method, string $url, array $options) use (&$uploads, &$positions): bool {
+            $uploads[$url] = imageUploadSnapshot($options);
+            $positions['variations'] = ftell($options['body']['image']);
+            return $url === HTTP_CLIENT_TEST_BASE_URL . '/images/variations';
+        })
+        ->andReturn($legacyResponse);
+
+    $decoded = imageHttpClient($http)->generateVariations([
+        'input_image' => 'data:image/png;base64,' . base64_encode('PNGBYTES'),
+        'model' => HTTP_CLIENT_TEST_MODEL,
+        'prompt' => 'never sent',
+        'n' => 2,
+        'quality' => 'high',
+    ]);
+
+    expect($decoded['data'])->toHaveCount(1);
+
+    // The retired endpoint took the image file, `n` and `size` and nothing
+    // else.
+    $legacy = $uploads[HTTP_CLIENT_TEST_BASE_URL . '/images/variations'];
+    expect($legacy['fields'])->toBe(['image', 'n'])
+        ->and($legacy['n'])->toBe('2')
+        ->and($legacy['bytes'])->toBe('PNGBYTES');
+
+    // The image has to reach the second request whole, so the stream is
+    // rewound after the first one read it to the end.
+    expect($positions['edits'])->toBeGreaterThan(0)
+        ->and($positions['variations'])->toBe(0);
+});
+
+it('reports the edits endpoint when neither the edits nor the variations endpoint exists', function () {
+    $notFound = M::mock(ResponseInterface::class);
+    $notFound->shouldReceive('getStatusCode')->andReturn(404);
+    $notFound->shouldReceive('getContent')->with(false)->andReturn('');
+
+    $http = M::mock(HttpClientInterface::class);
+    $http->shouldReceive('request')->twice()->andReturn($notFound);
+
+    expect(fn() => imageHttpClient($http)->generateVariations([
+        'input_image' => 'data:image/png;base64,' . base64_encode('PNGBYTES'),
+        'n' => 2,
+    ]))->toThrow(RuntimeException::class, 'Image API returned HTTP 404 on /images/edits.');
+});
+
+it('stages the upload under the extension of the format the bytes are', function () {
+    $uploadResponse = M::mock(ResponseInterface::class);
+    $uploadResponse->shouldReceive('getStatusCode')->once()->andReturn(200);
+    $uploadResponse->shouldReceive('getContent')->once()->with(false)->andReturn(json_encode([
+        'data' => [['b64_json' => base64_encode('x')]],
+    ]));
+
+    $upload = null;
+
+    $http = M::mock(HttpClientInterface::class);
+    $http->shouldReceive('request')
+        ->once()
+        ->withArgs(function (string $method, string $url, array $options) use (&$upload): bool {
+            $upload = imageUploadSnapshot($options);
+            return true;
+        })
+        ->andReturn($uploadResponse);
+
+    // A JPEG staged as `.png` would go up as `image/png` and be rejected by
+    // the upstream, which reads the format from the part's content type.
+    imageHttpClient($http)->generateVariations([
+        'input_image' => 'data:image/jpeg;base64,' . HTTP_CLIENT_TEST_JPEG,
+        'n' => 1,
+    ]);
+
+    expect($upload['filename'])->toEndWith('.jpg');
+});
+
 it('decodes data: URIs as input_image without making an HTTP request', function () {
     $uploadResponse = M::mock(ResponseInterface::class);
     $uploadResponse->shouldReceive('getStatusCode')->once()->andReturn(200);
@@ -220,7 +334,7 @@ it('decodes data: URIs as input_image without making an HTTP request', function 
         ->withArgs(function (string $method, string $url, array $options) use (&$upload): bool {
             $upload = imageUploadSnapshot($options);
             return $method === 'POST'
-                && $url === HTTP_CLIENT_TEST_BASE_URL . '/images/variations';
+                && $url === HTTP_CLIENT_TEST_BASE_URL . '/images/edits';
         })
         ->andReturn($uploadResponse);
     $http->shouldNotReceive('request'); // no GET — the data: URI is local
@@ -289,12 +403,12 @@ it('rejects an input_image URL that responds with an error status', function () 
     ]))->toThrow(RuntimeException::class, 'Failed to fetch input_image: HTTP 404.');
 });
 
-it('does not retry a transport failure on the variations upload and points at n', function () {
+it('does not retry a transport failure on the edits upload and points at n', function () {
     $fetch = M::mock(ResponseInterface::class);
     $fetch->shouldReceive('getStatusCode')->andReturn(200);
     $fetch->shouldReceive('getContent')->with(false)->andReturn('PNGDATA');
 
-    $transport = new class ('Idle timeout reached for ".../images/variations".') extends RuntimeException implements TransportExceptionInterface {};
+    $transport = new class ('Idle timeout reached for ".../images/edits".') extends RuntimeException implements TransportExceptionInterface {};
 
     $http = M::mock(HttpClientInterface::class);
     $http->shouldReceive('request')->once()->with('GET', 'https://example.com/seed.png', M::any())->andReturn($fetch);
@@ -336,5 +450,5 @@ it('falls back to a bare status line when the error body carries no message', fu
     $http->shouldReceive('request')->once()->andReturn($response);
 
     expect(fn() => imageHttpClient($http)->generate(['model' => HTTP_CLIENT_TEST_MODEL]))
-        ->toThrow(RuntimeException::class, 'Image API returned HTTP 429.');
+        ->toThrow(RuntimeException::class, 'Image API returned HTTP 429 on /images/generations.');
 });

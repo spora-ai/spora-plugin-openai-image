@@ -10,7 +10,7 @@ The tool exposes two operations:
 - `generate_variations` — one or more images (default 3, min 1, max 8), or semantic variations of an existing image. Approval-gated by default.
 
   - Prompt-based (default): `POST {base_url}/images/generations` with `n` independent samples from the same prompt.
-  - Image-based (`input_image` supplied): `POST {base_url}/images/variations` (multipart upload). `input_image` accepts an http(s) URL, a `data:` URI, a 36-char Media Archive UUID, or an opaque `/api/v1/assets/<uuid>.<ext>` URL. The plugin resolves Media Archive references server-side so the bytes never enter the chat context.
+  - Image-based (`input_image` supplied): `POST {base_url}/images/edits` (multipart upload). `input_image` accepts an http(s) URL, a `data:` URI, a 36-char Media Archive UUID, or an opaque `/api/v1/assets/<uuid>.<ext>` URL. The plugin resolves Media Archive references server-side so the bytes never enter the chat context. The prompt becomes the change to make to the source image. Providers that still serve only the retired `/images/variations` endpoint are answered by a fallback to it.
 
 ## Companion plugins
 

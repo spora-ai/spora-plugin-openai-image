@@ -19,9 +19,9 @@ use Spora\Tools\ValueObjects\ToolResult;
  * self-correct instead of retrying.
  *
  * Size cap: 25 MB on the resulting `data:` URI. The OpenAI
- * `/v1/images/variations` endpoint accepts PNG inputs up to 4 MB; the cap
- * leaves headroom for more permissive endpoints while still rejecting runaway
- * inputs before the upstream charges for them.
+ * `/v1/images/edits` endpoint accepts PNG, JPEG and WebP inputs up to 50 MB;
+ * the cap leaves headroom for more permissive endpoints while still
+ * rejecting runaway inputs before the upstream charges for them.
  *
  * The reader arrives as a closure rather than a concrete service so the plugin
  * does not depend on the host's `final`

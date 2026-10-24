@@ -23,6 +23,24 @@ final class OpenAIImageHttpClient
      */
     private const STAGE_FAILED = 'Failed to stage the input image for upload.';
 
+    /**
+     * The endpoint that takes a source image. It replaced the retired
+     * `/images/variations`.
+     */
+    private const EDITS_PATH = '/images/edits';
+
+    /**
+     * The retired endpoint. OpenAI answers 404 for it, and so does every
+     * provider that moved on to `/images/edits`.
+     */
+    private const VARIATIONS_PATH = '/images/variations';
+
+    /**
+     * `/images/edits` requires a prompt; the retired endpoint took none, so a
+     * caller that named only a source image needs one spelled out here.
+     */
+    public const DEFAULT_VARIATION_PROMPT = 'Create a variation of the provided image.';
+
     public function __construct(
         private readonly HttpClientInterface $httpClient,
         private readonly string $apiKey,
@@ -43,9 +61,9 @@ final class OpenAIImageHttpClient
     }
 
     /**
-     * POST /v1/images/generations (prompt-based) or /v1/images/variations
+     * POST /v1/images/generations (prompt-based) or /v1/images/edits
      * (image-based, multipart upload). `input_image` is the switch: absent →
-     * JSON generation, present → multipart upload to the variations endpoint.
+     * JSON generation, present → multipart upload to the edits endpoint.
      *
      * @param array<string, mixed> $body Must include `n` (defaults are applied upstream).
      * @return array<string, mixed>
@@ -56,7 +74,7 @@ final class OpenAIImageHttpClient
         unset($body['input_image']);
 
         if (is_string($inputImage) && $inputImage !== '') {
-            $response = $this->postMultipart('/images/variations', $body, $inputImage);
+            $response = $this->postMultipart($body, $inputImage);
             return $this->decodeResponse($response);
         }
 
@@ -86,13 +104,17 @@ final class OpenAIImageHttpClient
             );
         }
         $raw = $response->getContent(false);
-        return new ResponseData($response->getStatusCode(), $raw, json_decode($raw, true));
+        return new ResponseData($response->getStatusCode(), $raw, json_decode($raw, true), $path);
     }
 
     /**
-     * Multipart upload to /v1/images/variations. The upstream API only accepts
-     * `image` (file), `n`, and `size` here — `prompt`, `quality`, and `background`
-     * are not supported on the variations endpoint and are stripped if present.
+     * Multipart upload of the source image to /v1/images/edits.
+     *
+     * The edits endpoint replaced the retired /v1/images/variations and takes
+     * the image, the model and a prompt describing the wanted change; `n`,
+     * `size`, `quality` and `background` are optional. A provider that never
+     * implemented it answers 404, and the retired endpoint is tried then — it
+     * accepted the image file, `n` and `size`, and nothing else.
      *
      * Symfony's HttpClient has no `multipart` option — it rejects the request
      * with `Unsupported option "multipart"`. It flips an array `body` to
@@ -102,17 +124,36 @@ final class OpenAIImageHttpClient
      *
      * @param array<string, mixed> $body
      */
-    private function postMultipart(string $path, array $body, string $inputImage): ResponseData
+    private function postMultipart(array $body, string $inputImage): ResponseData
     {
         $image = $this->stageImage($this->fetchImage($inputImage));
 
-        $fields = ['image' => $image['stream']];
-        foreach (['n', 'size'] as $field) {
-            if (isset($body[$field]) && $body[$field] !== '' && $body[$field] !== 'auto') {
-                $fields[$field] = (string) $body[$field];
-            }
-        }
+        try {
+            $response = $this->requestMultipart(self::EDITS_PATH, $this->editFields($body, $image));
 
+            if ($response->status !== 404) {
+                return $response;
+            }
+
+            // No edits endpoint here. The retired one is the only thing left
+            // to try, and the image stream has to be rewound first — the
+            // request above read it to the end.
+            $this->rewind($image);
+            $legacy = $this->requestMultipart(self::VARIATIONS_PATH, $this->variationFields($body, $image));
+
+            // Both gone: the edits endpoint is the one to report, because it
+            // is the one every current provider serves.
+            return $legacy->status === 404 ? $response : $legacy;
+        } finally {
+            $this->discardStagedImage($image);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $fields
+     */
+    private function requestMultipart(string $path, array $fields): ResponseData
+    {
         try {
             $response = $this->httpClient->request('POST', rtrim($this->baseUrl, '/') . $path, [
                 'headers' => [
@@ -129,34 +170,120 @@ final class OpenAIImageHttpClient
                 $this->timeoutSeconds,
                 $e,
             );
-        } finally {
-            $this->discardStagedImage($image);
         }
 
-        return new ResponseData($response->getStatusCode(), $raw, json_decode($raw, true));
+        return new ResponseData($response->getStatusCode(), $raw, json_decode($raw, true), $path);
+    }
+
+    /**
+     * The /v1/images/edits body: the source image, the model, and the prompt
+     * describing the wanted change. `n`, `size`, `quality` and `background`
+     * are optional and left out when they are still at their default.
+     *
+     * @param array<string, mixed> $body
+     * @param array{stream: resource, path: string} $image
+     * @return array<string, mixed>
+     */
+    private function editFields(array $body, array $image): array
+    {
+        $fields = ['image' => $image['stream']];
+
+        if (isset($body['model']) && $body['model'] !== '') {
+            $fields['model'] = (string) $body['model'];
+        }
+
+        $prompt = trim((string) ($body['prompt'] ?? ''));
+        $fields['prompt'] = $prompt !== '' ? $prompt : self::DEFAULT_VARIATION_PROMPT;
+
+        foreach (['n', 'size', 'quality', 'background'] as $field) {
+            if (isset($body[$field]) && $body[$field] !== '' && $body[$field] !== 'auto') {
+                $fields[$field] = (string) $body[$field];
+            }
+        }
+
+        return $fields;
+    }
+
+    /**
+     * The retired /v1/images/variations body: the image file, `n` and `size`.
+     * The endpoint accepted nothing else, so the model, the prompt and the
+     * quality settings are dropped.
+     *
+     * @param array<string, mixed> $body
+     * @param array{stream: resource, path: string} $image
+     * @return array<string, mixed>
+     */
+    private function variationFields(array $body, array $image): array
+    {
+        $fields = ['image' => $image['stream']];
+
+        foreach (['n', 'size'] as $field) {
+            if (isset($body[$field]) && $body[$field] !== '' && $body[$field] !== 'auto') {
+                $fields[$field] = (string) $body[$field];
+            }
+        }
+
+        return $fields;
     }
 
     /**
      * Stage the image bytes in a temp file and open them as a stream.
      *
-     * Symfony takes the multipart filename from the basename of the stream's
-     * path and its content type from the file extension, so the staged file
-     * carries the `.png` extension the upstream variations endpoint expects.
+     * The staged file carries the format of the bytes twice over: Symfony
+     * takes the multipart filename from the basename of the stream's path and
+     * the part's content type from the stream's context.
      *
      * @return array{stream: resource, path: string}
      */
     private function stageImage(string $bytes): array
     {
-        $path = sys_get_temp_dir() . '/spora_openai_image_' . bin2hex(random_bytes(8)) . '.png';
+        $format = self::imageFormat($bytes);
+        $path = sys_get_temp_dir() . '/spora_openai_image_' . bin2hex(random_bytes(8)) . '.' . $format['extension'];
 
         $written = @file_put_contents($path, $bytes);
-        $stream = $written === strlen($bytes) ? fopen($path, 'rb') : false;
+        $stream = $written === strlen($bytes) ? fopen($path, 'rb', false, stream_context_create([
+            'http' => ['content_type' => $format['mime']],
+        ])) : false;
         if ($stream === false) {
             @unlink($path);
             throw new OpenAIImageException(self::STAGE_FAILED, $this->timeoutSeconds);
         }
 
         return ['stream' => $stream, 'path' => $path];
+    }
+
+    /**
+     * The upstream accepts PNG, JPEG and WebP and reads the format off the
+     * upload. The bytes are sniffed here, because the staged file is what
+     * carries it — a JPEG staged as `.png` goes up as `image/png` and is
+     * rejected.
+     *
+     * PNG is the fallback, which is what the plugin's own media archive
+     * holds; the upstream then rejects a format it cannot read.
+     *
+     * @return array{extension: string, mime: string}
+     */
+    private static function imageFormat(string $bytes): array
+    {
+        if (str_starts_with($bytes, "\xFF\xD8\xFF")) {
+            return ['extension' => 'jpg', 'mime' => 'image/jpeg'];
+        }
+
+        if (str_starts_with($bytes, 'RIFF') && substr($bytes, 8, 4) === 'WEBP') {
+            return ['extension' => 'webp', 'mime' => 'image/webp'];
+        }
+
+        return ['extension' => 'png', 'mime' => 'image/png'];
+    }
+
+    /**
+     * @param array{stream: resource, path: string} $image
+     */
+    private function rewind(array $image): void
+    {
+        if (is_resource($image['stream'])) {
+            rewind($image['stream']);
+        }
     }
 
     /**
@@ -226,7 +353,7 @@ final class OpenAIImageHttpClient
     private function decodeResponse(ResponseData $response): array
     {
         if ($response->status >= 400) {
-            throw new OpenAIImageException($this->errorMessage($response->decoded, $response->status), $this->timeoutSeconds);
+            throw new OpenAIImageException($this->errorMessage($response->decoded, $response->status, $response->path), $this->timeoutSeconds);
         }
 
         if (!is_array($response->decoded)) {
@@ -237,12 +364,15 @@ final class OpenAIImageHttpClient
     }
 
     /** @param mixed $decoded */
-    private function errorMessage(mixed $decoded, int $status): string
+    private function errorMessage(mixed $decoded, int $status, string $path): string
     {
         if (is_array($decoded) && is_array($decoded['error'] ?? null) && is_string($decoded['error']['message'] ?? null)) {
             return 'Image API returned HTTP ' . $status . ': ' . $decoded['error']['message'];
         }
-        return 'Image API returned HTTP ' . $status . '.';
+
+        // The path is the only clue when the upstream answers with an empty
+        // body — a bare status says nothing about which endpoint was called.
+        return 'Image API returned HTTP ' . $status . ($path === '' ? '' : ' on ' . $path) . '.';
     }
 }
 
@@ -261,5 +391,6 @@ final class ResponseData
         public readonly int $status,
         public readonly string $raw,
         public readonly mixed $decoded,
+        public readonly string $path = '',
     ) {}
 }
