@@ -452,3 +452,28 @@ it('falls back to a bare status line when the error body carries no message', fu
     expect(fn() => imageHttpClient($http)->generate(['model' => HTTP_CLIENT_TEST_MODEL]))
         ->toThrow(RuntimeException::class, 'Image API returned HTTP 429 on /images/generations.');
 });
+
+it('refuses to stage an input image over the 25 MB cap and leaves no staged file behind', function () {
+    $fetchResponse = M::mock(ResponseInterface::class);
+    $fetchResponse->shouldReceive('getStatusCode')->once()->andReturn(200);
+    $fetchResponse->shouldReceive('getContent')->once()->with(false)->andReturn(str_repeat('a', 25 * 1024 * 1024 + 1));
+
+    $http = M::mock(HttpClientInterface::class);
+    // Only the fetch: the upload must never be attempted.
+    $http->shouldReceive('request')
+        ->once()
+        ->with('GET', 'https://example.com/big.png', M::any())
+        ->andReturn($fetchResponse);
+
+    expect(fn() => imageHttpClient($http)->generateVariations([
+        'input_image' => 'https://example.com/big.png',
+        'n' => 1,
+    ]))->toThrow(RuntimeException::class, 'exceeds the 25 MB cap');
+
+    $strays = array_filter(
+        glob(sys_get_temp_dir() . '/spora_openai_image_*') ?: [],
+        static fn(string $path): bool => (int) filesize($path) >= 25 * 1024 * 1024,
+    );
+
+    expect($strays)->toBe([]);
+});

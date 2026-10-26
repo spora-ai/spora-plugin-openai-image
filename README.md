@@ -43,7 +43,14 @@ sees exactly what the model sees:
 - `#[Tool].description`
 - `#[ToolOperation].description`
 - `#[ToolParameter].description`
-- every `#[ToolSetting].label` and its option labels, including the labels of
-  settings that carry `exposeToLlm: true`
+- every `#[ToolSetting].label` and its option labels
+
+An approval prompt is translatable only in the `%s` form. The host looks the
+stored, already-rendered sentence up and matches it against the catalogue's
+`%s` / `%d` templates, so the key is the `sprintf()` template — never the
+rendered text. This plugin's two approval prompts interpolate the prompt into
+the sentence rather than substituting it into a template, so the rendered
+sentence differs per prompt, there is no stable key to translate on, and they
+stay English.
 
 See the [plugin author guide → Translations](https://docs.spora-ai.com/develop/plugins/author-guide/translations).

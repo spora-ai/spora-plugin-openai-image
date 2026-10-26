@@ -30,6 +30,18 @@ final class OpenAIImageHttpClient
     private const EDITS_PATH = '/images/edits';
 
     /**
+     * The largest input image the plugin stages on disk.
+     *
+     * The bytes reach the temp file before the upstream ever sees them, so an
+     * unbounded download fills the disk first — hence a cap below the
+     * upstream's 50 MB limit for `/images/edits`. It is the number
+     * {@see OpenAIImageMediaArchiveResolver} caps a Media Archive asset at,
+     * which leaves that path untouched — the `data:` URI it builds stays well
+     * below this in raw bytes.
+     */
+    private const MAX_STAGED_BYTES = 25 * 1024 * 1024;
+
+    /**
      * The retired endpoint. OpenAI answers 404 for it, and so does every
      * provider that moved on to `/images/edits`.
      */
@@ -237,6 +249,20 @@ final class OpenAIImageHttpClient
      */
     private function stageImage(string $bytes): array
     {
+        $size = strlen($bytes);
+
+        // Refused before the file is written: staging it and deleting it
+        // afterwards would still put the bytes on the disk.
+        if ($size > self::MAX_STAGED_BYTES) {
+            throw new OpenAIImageException(
+                sprintf(
+                    'The input image is %s MB, exceeds the 25 MB cap. Resize the image before passing it as input_image.',
+                    number_format($size / 1024 / 1024, 1),
+                ),
+                $this->timeoutSeconds,
+            );
+        }
+
         $format = self::imageFormat($bytes);
         $path = sys_get_temp_dir() . '/spora_openai_image_' . bin2hex(random_bytes(8)) . '.' . $format['extension'];
 
