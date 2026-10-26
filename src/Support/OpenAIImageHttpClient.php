@@ -32,13 +32,12 @@ final class OpenAIImageHttpClient
     /**
      * The largest input image the plugin stages on disk.
      *
-     * The bytes reach the temp file before the upstream ever sees them, so
-     * an unbounded download fills the disk first. The upstream
-     * `/images/edits` accepts up to 50 MB; the cap is lower, so a runaway
-     * download is refused before it is staged. It is the number
+     * The bytes reach the temp file before the upstream ever sees them, so an
+     * unbounded download fills the disk first — hence a cap below the
+     * upstream's 50 MB limit for `/images/edits`. It is the number
      * {@see OpenAIImageMediaArchiveResolver} caps a Media Archive asset at,
-     * which leaves that path untouched — the `data:` URI it builds stays
-     * well below this in raw bytes.
+     * which leaves that path untouched — the `data:` URI it builds stays well
+     * below this in raw bytes.
      */
     private const MAX_STAGED_BYTES = 25 * 1024 * 1024;
 

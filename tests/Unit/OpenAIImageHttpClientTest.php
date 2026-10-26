@@ -459,8 +459,7 @@ it('refuses to stage an input image over the 25 MB cap and leaves no staged file
     $fetchResponse->shouldReceive('getContent')->once()->with(false)->andReturn(str_repeat('a', 25 * 1024 * 1024 + 1));
 
     $http = M::mock(HttpClientInterface::class);
-    // Only the fetch: the upload must never be attempted, because the bytes
-    // are refused before the file is written.
+    // Only the fetch: the upload must never be attempted.
     $http->shouldReceive('request')
         ->once()
         ->with('GET', 'https://example.com/big.png', M::any())
@@ -471,8 +470,6 @@ it('refuses to stage an input image over the 25 MB cap and leaves no staged file
         'n' => 1,
     ]))->toThrow(RuntimeException::class, 'exceeds the 25 MB cap');
 
-    // Nothing over the cap may survive in the temp dir — the file is never
-    // created, so the bytes never reach the disk.
     $strays = array_filter(
         glob(sys_get_temp_dir() . '/spora_openai_image_*') ?: [],
         static fn(string $path): bool => (int) filesize($path) >= 25 * 1024 * 1024,
